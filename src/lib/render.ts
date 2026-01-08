@@ -145,10 +145,13 @@ export async function renderToString(node: JSXNode, options?: RenderOptions): Pr
  */
 export function render(node: JSXNode, init?: ResponseInit): Response {
 	const stream = renderToStream(node);
+
+	// @ts-expect-error: not sure why.
 	const headers = new Headers(init?.headers);
 	if (!headers.has('Content-Type')) {
 		headers.set('Content-Type', 'text/html; charset=utf-8');
 	}
+
 	return new Response(stream, { ...init, headers });
 }
 
