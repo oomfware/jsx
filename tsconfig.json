@@ -1,0 +1,28 @@
+{
+	"compilerOptions": {
+		"target": "esnext",
+		"lib": ["esnext"],
+		"types": ["bun"],
+		"moduleDetection": "force",
+		"module": "preserve",
+		"moduleResolution": "bundler",
+		"resolveJsonModule": true,
+		"allowImportingTsExtensions": true,
+		"strict": true,
+		"noUnusedLocals": true,
+		"declaration": true,
+		"declarationMap": true,
+		"emitDeclarationOnly": true,
+		"esModuleInterop": true,
+		"isolatedModules": true,
+		"verbatimModuleSyntax": true,
+		"skipLibCheck": true,
+		"jsx": "react-jsx",
+		"jsxImportSource": "@oomfware/jsx",
+		"paths": {
+			"@oomfware/jsx/jsx-runtime": ["./src/jsx-runtime.ts"],
+			"@oomfware/jsx/jsx-dev-runtime": ["./src/jsx-runtime.ts"],
+		},
+	},
+	"include": ["src"],
+}
