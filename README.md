@@ -65,29 +65,51 @@ function HomePage() {
 
 ### streaming with Suspense
 
-stream async content as it resolves:
+the page shell streams immediately while async sections resolve in the background:
 
 ```tsx
-async function fetchUser(id: string) {
-	const res = await fetch(`/api/users/${id}`);
-	return res.json();
+import { render, Suspense, use } from '@oomfware/jsx';
+
+interface User {
+	name: string;
+	posts: { title: string }[];
 }
 
-function UserProfile({ userId }: { userId: string }) {
-	const user = use(fetchUser(userId));
-	return <div>{user.name}</div>;
+function UserPosts({ user }: { user: Promise<User> }) {
+	const { posts } = use(user);
+	return (
+		<ul>
+			{posts.map((post) => (
+				<li>{post.title}</li>
+			))}
+		</ul>
+	);
+}
+
+function UserPage({ user }: { user: Promise<User> }) {
+	return (
+		<html>
+			<head>
+				<title>user profile</title>
+			</head>
+			<body>
+				<h1>posts</h1>
+				<Suspense fallback={<div>loading posts...</div>}>
+					<UserPosts user={user} />
+				</Suspense>
+			</body>
+		</html>
+	);
 }
 
 router.get('/users/:id', ({ params }) => {
-	return render(
-		<Suspense fallback={<div>loading...</div>}>
-			<UserProfile userId={params.id} />
-		</Suspense>,
-	);
+	const user = fetch(`/api/users/${params.id}`).then((r) => r.json());
+	return render(<UserPage user={user} />);
 });
 ```
 
-the fallback streams immediately, then the resolved content replaces it when ready.
+the promise is created in the handler and passed down - `use()` caches by promise identity, so the
+same instance must be used across renders.
 
 ### error responses
 
