@@ -1,10 +1,10 @@
-fetch-router is a composable HTTP router library for the Fetch API, built with TypeScript.
+@oomfware/jsx is a server-side JSX renderer with streaming, Suspense, and context support.
 
 the source code is organized under `src/`:
 
-- `lib/`: core router implementation (router, middleware, routes, injection, controllers)
-- `lib/route-helpers/`: convenience helpers for common route patterns (method, form, resource)
-- `middlewares/`: optional middleware exports (async-context)
+- `lib/`: core implementation (render, context, suspense, types)
+- `jsx-runtime.ts`: JSX runtime functions (`jsx`, `jsxs`, `Fragment`)
+- `index.ts`: public API exports
 
 ## development notes
 
