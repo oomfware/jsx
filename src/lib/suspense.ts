@@ -17,6 +17,19 @@ export function Suspense({ children }: SuspenseProps): JSXElement {
 	return jsx(Fragment, { children });
 }
 
+export interface ErrorBoundaryProps {
+	fallback: (error: unknown) => JSXNode;
+	children?: JSXNode;
+}
+
+/**
+ * error boundary - catches render errors and displays fallback
+ */
+export function ErrorBoundary({ children }: ErrorBoundaryProps): JSXElement {
+	// ErrorBoundary is handled specially in buildSegment, this is just for typing
+	return jsx(Fragment, { children });
+}
+
 /** cache for resolved/rejected promise values */
 const promiseCache = new WeakMap<
 	Promise<unknown>,

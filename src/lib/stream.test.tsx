@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'bun:test';
 
-import { createContext, render, renderToStream, renderToString, Suspense, use } from '../index.ts';
+import {
+	createContext,
+	ErrorBoundary,
+	render,
+	renderToStream,
+	renderToString,
+	Suspense,
+	use,
+} from '../index.ts';
 
 // suspense runtime script (injected once before first resolution)
 const SR = '$sr';
@@ -758,7 +766,266 @@ describe('stream', () => {
 
 			expect(throwCount).toBe(20); // 1 initial + 19 retries, error thrown before 20th retry
 			expect(errors.length).toBe(1);
-			expect((errors[0] as Error).message).toContain('exceeded maximum retry attempts');
+			expect((errors[0] as Error).message).toBe('suspense boundary exceeded maximum retry attempts (20)');
+		});
+	});
+
+	describe('error boundary', () => {
+		it('catches sync render errors', async () => {
+			function ThrowingComponent(): never {
+				throw new Error('sync error');
+			}
+
+			const html = await renderToString(
+				<ErrorBoundary fallback={(e) => <div>caught: {(e as Error).message}</div>}>
+					<ThrowingComponent />
+				</ErrorBoundary>,
+			);
+
+			expect(html).toBe('<div>caught: sync error</div>');
+		});
+
+		it('catches async suspense errors (max attempts)', async () => {
+			function InfiniteThrowComponent(): never {
+				throw Promise.resolve();
+			}
+
+			const html = await renderToString(
+				<ErrorBoundary fallback={(e) => <div>caught: {(e as Error).message}</div>}>
+					<Suspense fallback={<div>loading...</div>}>
+						<InfiniteThrowComponent />
+					</Suspense>
+				</ErrorBoundary>,
+			);
+
+			expect(html).toBe(
+				'<div>caught: suspense boundary exceeded maximum retry attempts (20)</div>' + SUSPENSE_RUNTIME,
+			);
+		});
+
+		it('passes error object to fallback function', async () => {
+			const testError = new Error('test error');
+			function ThrowingComponent(): never {
+				throw testError;
+			}
+
+			let receivedError: unknown;
+			const html = await renderToString(
+				<ErrorBoundary
+					fallback={(e) => {
+						receivedError = e;
+						return <div>error</div>;
+					}}
+				>
+					<ThrowingComponent />
+				</ErrorBoundary>,
+			);
+
+			expect(receivedError).toBe(testError);
+			expect(html).toBe('<div>error</div>');
+		});
+
+		it('nested ErrorBoundary catches at nearest boundary', async () => {
+			function ThrowingComponent(): never {
+				throw new Error('inner error');
+			}
+
+			const html = await renderToString(
+				<ErrorBoundary fallback={() => <div>outer</div>}>
+					<div>
+						<ErrorBoundary fallback={() => <div>inner</div>}>
+							<ThrowingComponent />
+						</ErrorBoundary>
+					</div>
+				</ErrorBoundary>,
+			);
+
+			expect(html).toBe('<div><div>inner</div></div>');
+		});
+
+		it('renders children when no error', async () => {
+			const html = await renderToString(
+				<ErrorBoundary fallback={() => <div>error</div>}>
+					<div>success</div>
+				</ErrorBoundary>,
+			);
+
+			expect(html).toBe('<div>success</div>');
+		});
+
+		it('lets promises pass through to Suspense', async () => {
+			const { promise, resolve } = Promise.withResolvers<string>();
+
+			function AsyncComponent() {
+				const data = use(promise);
+				return <div>{data}</div>;
+			}
+
+			const stream = renderToStream(
+				<ErrorBoundary fallback={() => <div>error</div>}>
+					<Suspense fallback={<div>loading...</div>}>
+						<AsyncComponent />
+					</Suspense>
+				</ErrorBoundary>,
+			);
+
+			resolve('loaded');
+
+			const html = await drain(stream);
+			expect(html).toBe(
+				'<!--$s:s1--><div>loading...</div><!--/$s:s1-->' +
+					SUSPENSE_RUNTIME +
+					'<template data-suspense="s1"><div>loaded</div></template>' +
+					SUSPENSE_CALL,
+			);
+		});
+
+		it('fallback error caught by parent ErrorBoundary (sync)', async () => {
+			function ThrowingComponent(): never {
+				throw new Error('child error');
+			}
+
+			function ThrowingFallback(): never {
+				throw new Error('fallback error');
+			}
+
+			const html = await renderToString(
+				<ErrorBoundary fallback={(e) => <div>outer: {(e as Error).message}</div>}>
+					<ErrorBoundary fallback={() => <ThrowingFallback />}>
+						<ThrowingComponent />
+					</ErrorBoundary>
+				</ErrorBoundary>,
+			);
+
+			expect(html).toBe('<div>outer: fallback error</div>');
+		});
+
+		it('fallback error caught by parent ErrorBoundary (async)', async () => {
+			function InfiniteThrowComponent(): never {
+				throw Promise.resolve();
+			}
+
+			function ThrowingFallback(): never {
+				throw new Error('fallback error');
+			}
+
+			const html = await renderToString(
+				<ErrorBoundary fallback={(e) => <div>outer: {(e as Error).message}</div>}>
+					<ErrorBoundary fallback={() => <ThrowingFallback />}>
+						<Suspense fallback={<div>loading...</div>}>
+							<InfiniteThrowComponent />
+						</Suspense>
+					</ErrorBoundary>
+				</ErrorBoundary>,
+			);
+
+			expect(html).toBe('<div>outer: fallback error</div>' + SUSPENSE_RUNTIME);
+		});
+
+		it('fallback error goes to onError when no parent ErrorBoundary (sync)', async () => {
+			function ThrowingComponent(): never {
+				throw new Error('child error');
+			}
+
+			function ThrowingFallback(): never {
+				throw new Error('fallback error');
+			}
+
+			const errors: unknown[] = [];
+			try {
+				await renderToString(
+					<ErrorBoundary fallback={() => <ThrowingFallback />}>
+						<ThrowingComponent />
+					</ErrorBoundary>,
+					{ onError: (e) => errors.push(e) },
+				);
+			} catch {
+				// expected
+			}
+
+			expect(errors.length).toBe(1);
+			expect((errors[0] as Error).message).toBe('fallback error');
+		});
+
+		it('fallback error goes to onError when no parent ErrorBoundary (async)', async () => {
+			function InfiniteThrowComponent(): never {
+				throw Promise.resolve();
+			}
+
+			function ThrowingFallback(): never {
+				throw new Error('fallback error');
+			}
+
+			const errors: unknown[] = [];
+			try {
+				await renderToString(
+					<ErrorBoundary fallback={() => <ThrowingFallback />}>
+						<Suspense fallback={<div>loading...</div>}>
+							<InfiniteThrowComponent />
+						</Suspense>
+					</ErrorBoundary>,
+					{ onError: (e) => errors.push(e) },
+				);
+			} catch {
+				// expected
+			}
+
+			expect(errors.length).toBe(1);
+			expect((errors[0] as Error).message).toBe('fallback error');
+		});
+
+		it('fallback error goes to onError during streaming', async () => {
+			// this tests the onError path in streamPendingSuspense specifically:
+			// 1. outer error boundary catches and renders fallback with suspense
+			// 2. that suspense is processed during streaming
+			// 3. its content has an error boundary whose fallback throws
+
+			function InfiniteThrowComponent(): never {
+				throw Promise.resolve();
+			}
+
+			function ThrowingFallback(): never {
+				throw new Error('streaming fallback error');
+			}
+
+			const { promise, resolve } = Promise.withResolvers<void>();
+
+			function AsyncThenErrorBoundary() {
+				use(promise);
+				return (
+					<ErrorBoundary fallback={() => <ThrowingFallback />}>
+						<Suspense fallback={<div>inner loading</div>}>
+							<InfiniteThrowComponent />
+						</Suspense>
+					</ErrorBoundary>
+				);
+			}
+
+			function FallbackWithSuspense() {
+				return (
+					<Suspense fallback={<div>fallback loading</div>}>
+						<AsyncThenErrorBoundary />
+					</Suspense>
+				);
+			}
+
+			const errors: unknown[] = [];
+			const streamPromise = renderToString(
+				<ErrorBoundary fallback={() => <FallbackWithSuspense />}>
+					<Suspense fallback={<div>outer loading</div>}>
+						<InfiniteThrowComponent />
+					</Suspense>
+				</ErrorBoundary>,
+				{ onError: (e) => errors.push(e) },
+			);
+
+			// resolve the inner async component to trigger the streaming error path
+			resolve();
+
+			await streamPromise;
+
+			expect(errors.length).toBe(1);
+			expect((errors[0] as Error).message).toBe('streaming fallback error');
 		});
 	});
 });

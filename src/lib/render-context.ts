@@ -1,4 +1,5 @@
 import type { Context } from './context.ts';
+import type { JSXNode } from './types.ts';
 
 /** stack of context frames */
 type ContextFrame = Map<Context<unknown>, unknown>;
@@ -20,6 +21,14 @@ export type Segment =
 			readonly fallback: Segment;
 			pending?: Promise<void>;
 			content: Segment | null;
+	  }
+	| {
+			readonly kind: 'error-boundary';
+			readonly children: Segment;
+			readonly fallbackFn: (error: unknown) => JSXNode;
+			readonly renderContext: RenderContext;
+			readonly path: string;
+			fallbackSegment: Segment | null;
 	  };
 
 // #endregion

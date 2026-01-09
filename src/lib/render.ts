@@ -21,7 +21,7 @@ import {
 	type Segment,
 	setActiveRenderContext,
 } from './render-context.ts';
-import { Suspense, type SuspenseProps } from './suspense.ts';
+import { ErrorBoundary, type ErrorBoundaryProps, Suspense, type SuspenseProps } from './suspense.ts';
 import type { Component, JSXElement, JSXNode } from './types.ts';
 
 const HEAD_ELEMENTS = new Set(['title', 'meta', 'link', 'style']);
@@ -213,6 +213,10 @@ function buildSegmentInner(node: JSXNode, context: RenderContext, path: string):
 			if (type === Suspense) {
 				return buildSuspenseSegment(props as unknown as SuspenseProps, context, path);
 			}
+			// ErrorBoundary
+			if (type === ErrorBoundary) {
+				return buildErrorBoundarySegment(props as unknown as ErrorBoundaryProps, context, path);
+			}
 			return buildComponentSegment(type, props as Record<string, unknown>, context, path);
 		}
 	}
@@ -390,11 +394,42 @@ function buildSuspenseSegment(props: SuspenseProps, ctx: RenderContext, path: st
 	}
 }
 
+function buildErrorBoundarySegment(
+	props: ErrorBoundaryProps,
+	ctx: RenderContext,
+	path: string,
+): Segment {
+	// snapshot context for potential async fallback rendering
+	const asyncCtx: RenderContext = {
+		...ctx,
+		contextStack: [...ctx.contextStack],
+		currentFrame: null,
+	};
+
+	try {
+		const children = buildSegment(props.children, ctx, path);
+		return {
+			kind: 'error-boundary',
+			children,
+			fallbackFn: props.fallback,
+			renderContext: asyncCtx,
+			path,
+			fallbackSegment: null,
+		};
+	} catch (error) {
+		if (error instanceof Promise) {
+			throw error; // let Suspense handle it
+		}
+		// sync error - render fallback immediately
+		return buildSegment(props.fallback(error), ctx, path);
+	}
+}
+
 // #endregion
 
 // #region Serialization
 
-/** resolve all blocking suspense boundaries */
+/** resolve all blocking suspense boundaries and error boundaries */
 async function resolveBlocking(segment: Segment): Promise<void> {
 	if (segment.kind === 'suspense') {
 		if (segment.pending) {
@@ -403,6 +438,18 @@ async function resolveBlocking(segment: Segment): Promise<void> {
 		}
 		if (segment.content) {
 			await resolveBlocking(segment.content);
+		}
+		return;
+	}
+	if (segment.kind === 'error-boundary') {
+		try {
+			await resolveBlocking(segment.children);
+		} catch (error) {
+			segment.fallbackSegment = buildSegment(
+				segment.fallbackFn(error),
+				segment.renderContext,
+				segment.path,
+			);
 		}
 		return;
 	}
@@ -421,6 +468,9 @@ function serializeSegment(seg: Segment): string {
 	if (seg.kind === 'composite') {
 		return seg.parts.map(serializeSegment).join('');
 	}
+	if (seg.kind === 'error-boundary') {
+		return serializeSegment(seg.fallbackSegment ?? seg.children);
+	}
 	// suspense - always render fallback; resolved content streams in template
 	return `<!--$s:${seg.id}-->${serializeSegment(seg.fallback)}<!--/$s:${seg.id}-->`;
 }
@@ -438,21 +488,26 @@ async function streamPendingSuspense(
 	context: RenderContext,
 	controller: ReadableStreamDefaultController<Uint8Array>,
 ): Promise<void> {
-	const processed = new Set<string>();
 	controller.enqueue(encodeUtf8(SUSPENSE_RUNTIME));
 
 	while (true) {
-		const batch = context.pendingSuspense.filter(({ id }) => !processed.has(id));
+		const batch = context.pendingSuspense;
 		if (batch.length === 0) {
 			break;
 		}
+		context.pendingSuspense = [];
 
 		await Promise.all(
 			batch.map(async ({ id, promise }) => {
-				processed.add(id);
+				let resolvedSegment: Segment;
+				try {
+					resolvedSegment = await promise;
+				} catch {
+					// promise rejected - error was caught by an error boundary
+					return;
+				}
 
 				try {
-					const resolvedSegment = await promise;
 					await resolveBlocking(resolvedSegment);
 
 					const html = serializeSegment(resolvedSegment);
