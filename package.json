@@ -10,6 +10,7 @@
 	},
 	"exports": {
 		".": "./dist/index.mjs",
+		"./jsx-dev-runtime": "./dist/jsx-dev-runtime.mjs",
 		"./jsx-runtime": "./dist/jsx-runtime.mjs",
 		"./package.json": "./package.json"
 	},

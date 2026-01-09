@@ -10,21 +10,7 @@ export function jsx<P, T extends string | Component<any>>(type: T, props: P): JS
 	return { type, props };
 }
 
-/**
- * creates a JSX element
- * @param type element tag name or component function
- * @param props element properties including children
- * @returns JSX element
- */
-export const jsxs = jsx;
-
-/**
- * creates a JSX element
- * @param type element tag name or component function
- * @param props element properties including children
- * @returns JSX element
- */
-export const jsxDEV = jsx;
+export { jsx as jsxs };
 
 export function Fragment(props: { children?: JSXNode }): JSXNode {
 	return props.children;
