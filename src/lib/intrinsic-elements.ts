@@ -583,6 +583,15 @@ interface BlockquoteHTMLAttributes extends HTMLAttributes {
 }
 
 interface ButtonHTMLAttributes extends HTMLAttributes {
+	command?:
+		| 'show-modal'
+		| 'close'
+		| 'show-popover'
+		| 'hide-popover'
+		| 'toggle-popover'
+		| `--${string}`
+		| undefined;
+	commandfor?: string | undefined;
 	disabled?: boolean | undefined;
 	form?: string | undefined;
 	formaction?: string | undefined;
