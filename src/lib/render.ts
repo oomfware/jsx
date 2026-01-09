@@ -417,25 +417,28 @@ async function streamPendingSuspense(
 	controller: ReadableStreamDefaultController<Uint8Array>,
 	encoder: TextEncoder,
 ): Promise<void> {
-	let runtimeInjected = false;
 	const processed = new Set<string>();
+	controller.enqueue(encoder.encode(SUSPENSE_RUNTIME));
+
 	while (true) {
 		const batch = context.pendingSuspense.filter(({ id }) => !processed.has(id));
-		if (batch.length === 0) break;
+		if (batch.length === 0) {
+			break;
+		}
+
 		await Promise.all(
 			batch.map(async ({ id, promise }) => {
 				processed.add(id);
+
 				try {
 					const resolvedSegment = await promise;
 					await resolveBlocking(resolvedSegment);
+
 					const html = serializeSegment(resolvedSegment);
-					// inject runtime once before first resolution
-					const runtime = runtimeInjected ? '' : SUSPENSE_RUNTIME;
-					runtimeInjected = true;
-					// stream template + call to swap function
+
 					controller.enqueue(
 						encoder.encode(
-							`${runtime}<template data-suspense="${id}">${html}</template>` +
+							`<template data-suspense="${id}">${html}</template>` +
 								`<script>${SR}(document.currentScript.previousElementSibling)</script>`,
 						),
 					);
