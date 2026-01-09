@@ -7,6 +7,10 @@ settings:
 importers:
 
   .:
+    dependencies:
+      '@atcute/uint8array':
+        specifier: ^1.0.6
+        version: 1.0.6
     devDependencies:
       '@ianvs/prettier-plugin-sort-imports':
         specifier: ^4.7.0
@@ -37,6 +41,9 @@ importers:
         version: 5.9.3
 
 packages:
+
+  '@atcute/uint8array@1.0.6':
+    resolution: {integrity: sha512-ucfRBQc7BFT8n9eCyGOzDHEMKF/nZwhS2pPao4Xtab1ML3HdFYcX2DM1tadCzas85QTGxHe5urnUAAcNKGRi9A==}
 
   '@babel/code-frame@7.27.1':
     resolution: {integrity: sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg==}
@@ -729,6 +736,8 @@ packages:
     hasBin: true
 
 snapshots:
+
+  '@atcute/uint8array@1.0.6': {}
 
   '@babel/code-frame@7.27.1':
     dependencies:

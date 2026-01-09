@@ -10,6 +10,8 @@
  *   collected and injected into <head> during finalization
  */
 
+import { encodeUtf8 } from '@atcute/uint8array';
+
 import { Fragment } from '../jsx-runtime.ts';
 
 import { currentFrame, popContextFrame, pushContextFrame } from './context.ts';
@@ -87,7 +89,6 @@ interface RenderContext {
  * @returns readable stream of UTF-8 encoded HTML
  */
 export function renderToStream(node: JSXNode, options?: RenderOptions): ReadableStream<Uint8Array> {
-	const encoder = new TextEncoder();
 	const onError = options?.onError ?? ((error) => console.error(error));
 	const context: RenderContext = {
 		headElements: [],
@@ -97,18 +98,22 @@ export function renderToStream(node: JSXNode, options?: RenderOptions): Readable
 		onError,
 		pendingSuspense: [],
 	};
+
 	return new ReadableStream({
 		async start(controller) {
 			try {
 				const root = buildSegment(node, context, '');
 				await resolveBlocking(root);
+
 				const html = serializeSegment(root);
 				const finalHtml = finalizeHtml(html, context);
-				controller.enqueue(encoder.encode(finalHtml));
+				controller.enqueue(encodeUtf8(finalHtml));
+
 				// stream pending suspense boundaries as they resolve
 				if (context.pendingSuspense.length > 0) {
-					await streamPendingSuspense(context, controller, encoder);
+					await streamPendingSuspense(context, controller);
 				}
+
 				controller.close();
 			} catch (error) {
 				onError(error);
@@ -415,10 +420,9 @@ const SUSPENSE_RUNTIME = `<script>${SR}=(t,i,s,e)=>{i="$s:"+t.dataset.suspense;s
 async function streamPendingSuspense(
 	context: RenderContext,
 	controller: ReadableStreamDefaultController<Uint8Array>,
-	encoder: TextEncoder,
 ): Promise<void> {
 	const processed = new Set<string>();
-	controller.enqueue(encoder.encode(SUSPENSE_RUNTIME));
+	controller.enqueue(encodeUtf8(SUSPENSE_RUNTIME));
 
 	while (true) {
 		const batch = context.pendingSuspense.filter(({ id }) => !processed.has(id));
@@ -437,7 +441,7 @@ async function streamPendingSuspense(
 					const html = serializeSegment(resolvedSegment);
 
 					controller.enqueue(
-						encoder.encode(
+						encodeUtf8(
 							`<template data-suspense="${id}">${html}</template>` +
 								`<script>${SR}(document.currentScript.previousElementSibling)</script>`,
 						),
