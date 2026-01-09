@@ -347,11 +347,29 @@ function buildSuspenseSegment(props: SuspenseProps, ctx: RenderContext, path: st
 				content: null,
 			};
 
+			// snapshot context stack for async re-render (parent frames will be popped
+			// by the time the promise resolves)
+			const asyncCtx: RenderContext = {
+				...ctx,
+				contextStack: [...ctx.contextStack],
+				currentFrame: null,
+			};
+
+			// re-render function that handles subsequent promise throws
+			const rerender = (): Promise<void> | void => {
+				try {
+					seg.content = buildSegment(props.children, asyncCtx, suspenseId);
+				} catch (err) {
+					if (err instanceof Promise) {
+						// component threw another promise - wait and retry
+						return err.then(rerender);
+					}
+					throw err;
+				}
+			};
+
 			// set up promise to re-render children when resolved
-			const pending = thrown.then(() => {
-				// re-render children after promise resolves
-				seg.content = buildSegment(props.children, ctx, suspenseId);
-			});
+			const pending = thrown.then(rerender);
 			seg.pending = pending;
 
 			// track for streaming

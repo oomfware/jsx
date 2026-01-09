@@ -621,5 +621,119 @@ describe('stream', () => {
 				expect(e).toBe(error);
 			}
 		});
+
+		it('component throwing multiple sequential promises', async () => {
+			const { promise: p1, resolve: r1 } = Promise.withResolvers<string>();
+			const { promise: p2, resolve: r2 } = Promise.withResolvers<string>();
+
+			let callCount = 0;
+			function MultiAsyncComponent() {
+				callCount++;
+				const first = use(p1);
+				const second = use(p2);
+				return (
+					<div>
+						{first} {second}
+					</div>
+				);
+			}
+
+			const stream = renderToStream(
+				<Suspense fallback={<span>loading...</span>}>
+					<MultiAsyncComponent />
+				</Suspense>,
+			);
+
+			// resolve first promise, component will re-render and throw second
+			r1('hello');
+			await Promise.resolve();
+
+			// resolve second promise, component will complete
+			r2('world');
+
+			const html = await drain(stream);
+			expect(html).toBe(
+				'<!--$s:s1--><span>loading...</span><!--/$s:s1-->' +
+					SUSPENSE_RUNTIME +
+					'<template data-suspense="s1"><div>hello world</div></template>' +
+					SUSPENSE_CALL,
+			);
+			// component should be called multiple times as it re-renders after each promise
+			expect(callCount).toBeGreaterThan(1);
+		});
+
+		it('parallel renders have isolated context', async () => {
+			const ThemeContext = createContext('default');
+
+			function ThemedComponent() {
+				const theme = use(ThemeContext);
+				return <div class={theme}>content</div>;
+			}
+
+			// run two renders in parallel with different context values
+			const [html1, html2] = await Promise.all([
+				renderToString(
+					<ThemeContext.Provider value="dark">
+						<ThemedComponent />
+					</ThemeContext.Provider>,
+				),
+				renderToString(
+					<ThemeContext.Provider value="light">
+						<ThemedComponent />
+					</ThemeContext.Provider>,
+				),
+			]);
+
+			expect(html1).toBe('<div class="dark">content</div>');
+			expect(html2).toBe('<div class="light">content</div>');
+		});
+
+		it('parallel renders with suspense have isolated context', async () => {
+			const ThemeContext = createContext('default');
+			const { promise: p1, resolve: r1 } = Promise.withResolvers<string>();
+			const { promise: p2, resolve: r2 } = Promise.withResolvers<string>();
+
+			function AsyncThemedComponent({ promise }: { promise: Promise<string> }) {
+				const theme = use(ThemeContext);
+				const data = use(promise);
+				return <div class={theme}>{data}</div>;
+			}
+
+			// start both renders
+			const render1 = renderToString(
+				<ThemeContext.Provider value="dark">
+					<Suspense fallback={<span>loading dark...</span>}>
+						<AsyncThemedComponent promise={p1} />
+					</Suspense>
+				</ThemeContext.Provider>,
+			);
+
+			const render2 = renderToString(
+				<ThemeContext.Provider value="light">
+					<Suspense fallback={<span>loading light...</span>}>
+						<AsyncThemedComponent promise={p2} />
+					</Suspense>
+				</ThemeContext.Provider>,
+			);
+
+			// resolve in reverse order to test isolation
+			r2('second');
+			r1('first');
+
+			const [html1, html2] = await Promise.all([render1, render2]);
+
+			expect(html1).toBe(
+				'<!--$s:s1--><span>loading dark...</span><!--/$s:s1-->' +
+					SUSPENSE_RUNTIME +
+					'<template data-suspense="s1"><div class="dark">first</div></template>' +
+					SUSPENSE_CALL,
+			);
+			expect(html2).toBe(
+				'<!--$s:s1--><span>loading light...</span><!--/$s:s1-->' +
+					SUSPENSE_RUNTIME +
+					'<template data-suspense="s1"><div class="light">second</div></template>' +
+					SUSPENSE_CALL,
+			);
+		});
 	});
 });
