@@ -14,7 +14,13 @@ import { decodeUtf8From, encodeUtf8 } from '@atcute/uint8array';
 
 import { Fragment } from '../jsx-runtime.ts';
 
-import { currentFrame, popContextFrame, pushContextFrame } from './context.ts';
+import {
+	popContextFrame,
+	pushContextFrame,
+	type RenderContext,
+	type Segment,
+	setActiveRenderContext,
+} from './render-context.ts';
 import { Suspense, type SuspenseProps } from './suspense.ts';
 import type { Component, JSXElement, JSXNode } from './types.ts';
 
@@ -38,24 +44,7 @@ const SELF_CLOSING_TAGS = new Set([
 /** props that shouldn't be rendered as HTML attributes */
 const FRAMEWORK_PROPS = new Set(['children', 'dangerouslySetInnerHTML']);
 
-// #region Segment types
-
-type Segment =
-	| {
-			readonly kind: 'static';
-			readonly html: string;
-	  }
-	| {
-			readonly kind: 'composite';
-			readonly parts: readonly Segment[];
-	  }
-	| {
-			readonly kind: 'suspense';
-			readonly id: string;
-			readonly fallback: Segment;
-			pending?: Promise<void>;
-			content: Segment | null;
-	  };
+// #region Segment helpers
 
 function staticSeg(html: string): Segment {
 	return { kind: 'static', html };
@@ -73,15 +62,6 @@ export interface RenderOptions {
 	onError?: (error: unknown) => void;
 }
 
-interface RenderContext {
-	headElements: string[];
-	idsByPath: Map<string, number>;
-	insideHead: boolean;
-	insideSvg: boolean;
-	onError: (error: unknown) => void;
-	pendingSuspense: Array<{ id: string; promise: Promise<Segment> }>;
-}
-
 /**
  * renders JSX to a readable stream
  * @param node JSX node to render
@@ -91,6 +71,8 @@ interface RenderContext {
 export function renderToStream(node: JSXNode, options?: RenderOptions): ReadableStream<Uint8Array> {
 	const onError = options?.onError ?? ((error) => console.error(error));
 	const context: RenderContext = {
+		contextStack: [],
+		currentFrame: null,
 		headElements: [],
 		idsByPath: new Map(),
 		insideHead: false,
@@ -174,7 +156,16 @@ function isHeadElement(tag: string): boolean {
 	return HEAD_ELEMENTS.has(tag);
 }
 
-function buildSegment(node: JSXNode, context: RenderContext, path: string): Segment {
+function buildSegment(node: JSXNode, ctx: RenderContext, path: string): Segment {
+	const prev = setActiveRenderContext(ctx);
+	try {
+		return buildSegmentInner(node, ctx, path);
+	} finally {
+		setActiveRenderContext(prev);
+	}
+}
+
+function buildSegmentInner(node: JSXNode, context: RenderContext, path: string): Segment {
 	// primitives
 	if (typeof node === 'string' || typeof node === 'number' || typeof node === 'bigint') {
 		return staticSeg(escapeHtml(node, false));
@@ -186,7 +177,7 @@ function buildSegment(node: JSXNode, context: RenderContext, path: string): Segm
 	if (typeof node === 'object' && Symbol.iterator in node) {
 		const parts: Segment[] = [];
 		for (const child of node) {
-			parts.push(buildSegment(child, context, path));
+			parts.push(buildSegmentInner(child, context, path));
 		}
 		return compositeSeg(parts);
 	}
@@ -196,7 +187,7 @@ function buildSegment(node: JSXNode, context: RenderContext, path: string): Segm
 		// Fragment
 		if (type === Fragment) {
 			const children = (props as { children?: JSXNode }).children;
-			return children != null ? buildSegment(children, context, path) : EMPTY_SEGMENT;
+			return children != null ? buildSegmentInner(children, context, path) : EMPTY_SEGMENT;
 		}
 		// intrinsic elements (HTML tags)
 		if (typeof type === 'string') {
@@ -322,10 +313,9 @@ function buildComponentSegment(
 	// call component
 	const result = type(props);
 	// if component called provide(), push frame before rendering children
-	const hadFrame = currentFrame !== null;
-	pushContextFrame();
+	const hadFrame = pushContextFrame();
 	try {
-		return buildSegment(result, ctx, path);
+		return buildSegmentInner(result, ctx, path);
 	} finally {
 		popContextFrame(hadFrame);
 	}

@@ -1,6 +1,7 @@
 import { Fragment, jsx } from '../jsx-runtime.js';
 
-import { inject, type Context } from './context.js';
+import type { Context } from './context.js';
+import { inject } from './render-context.js';
 import type { JSXElement, JSXNode } from './types.js';
 
 export interface SuspenseProps {
