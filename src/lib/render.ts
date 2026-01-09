@@ -25,6 +25,7 @@ import { Suspense, type SuspenseProps } from './suspense.ts';
 import type { Component, JSXElement, JSXNode } from './types.ts';
 
 const HEAD_ELEMENTS = new Set(['title', 'meta', 'link', 'style']);
+const MAX_SUSPENSE_ATTEMPTS = 20;
 const SELF_CLOSING_TAGS = new Set([
 	'area',
 	'base',
@@ -356,27 +357,31 @@ function buildSuspenseSegment(props: SuspenseProps, ctx: RenderContext, path: st
 			};
 
 			// re-render function that handles subsequent promise throws
-			const rerender = (): Promise<void> | void => {
+			const rerender = (attempt: number): Promise<void> | void => {
+				if (attempt >= MAX_SUSPENSE_ATTEMPTS) {
+					throw new Error(
+						`suspense boundary exceeded maximum retry attempts (${MAX_SUSPENSE_ATTEMPTS})`,
+					);
+				}
 				try {
 					seg.content = buildSegment(props.children, asyncCtx, suspenseId);
 				} catch (err) {
 					if (err instanceof Promise) {
 						// component threw another promise - wait and retry
-						return err.then(rerender);
+						return err.then(() => rerender(attempt + 1));
 					}
 					throw err;
 				}
 			};
 
 			// set up promise to re-render children when resolved
-			const pending = thrown.then(rerender);
+			const pending = thrown.then(() => rerender(1));
 			seg.pending = pending;
 
 			// track for streaming
-			ctx.pendingSuspense.push({
-				id: suspenseId,
-				promise: pending.then(() => seg.content!),
-			});
+			const tracked = pending.then(() => seg.content!);
+			tracked.catch(() => {}); // prevent unhandled rejection if resolveBlocking catches first
+			ctx.pendingSuspense.push({ id: suspenseId, promise: tracked });
 
 			return seg;
 		}

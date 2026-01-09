@@ -735,5 +735,30 @@ describe('stream', () => {
 					SUSPENSE_CALL,
 			);
 		});
+
+		it('throws error when suspense exceeds max retry attempts', async () => {
+			let throwCount = 0;
+			function InfiniteThrowComponent(): never {
+				throwCount++;
+				// always throw a new promise
+				throw Promise.resolve();
+			}
+
+			const errors: unknown[] = [];
+			try {
+				await renderToString(
+					<Suspense fallback={<div>loading...</div>}>
+						<InfiniteThrowComponent />
+					</Suspense>,
+					{ onError: (e) => errors.push(e) },
+				);
+			} catch {
+				// expected - error propagates through stream
+			}
+
+			expect(throwCount).toBe(20); // 1 initial + 19 retries, error thrown before 20th retry
+			expect(errors.length).toBe(1);
+			expect((errors[0] as Error).message).toContain('exceeded maximum retry attempts');
+		});
 	});
 });
