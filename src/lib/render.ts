@@ -10,7 +10,7 @@
  *   collected and injected into <head> during finalization
  */
 
-import { encodeUtf8 } from '@atcute/uint8array';
+import { decodeUtf8From, encodeUtf8 } from '@atcute/uint8array';
 
 import { Fragment } from '../jsx-runtime.ts';
 
@@ -132,13 +132,17 @@ export function renderToStream(node: JSXNode, options?: RenderOptions): Readable
 export async function renderToString(node: JSXNode, options?: RenderOptions): Promise<string> {
 	const stream = renderToStream(node, options);
 	const reader = stream.getReader();
-	const decoder = new TextDecoder();
+
 	let html = '';
 	while (true) {
 		const { done, value } = await reader.read();
-		if (done) break;
-		html += decoder.decode(value);
+		if (done) {
+			break;
+		}
+
+		html += decodeUtf8From(value);
 	}
+
 	return html;
 }
 
