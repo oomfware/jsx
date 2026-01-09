@@ -21,7 +21,7 @@
 		"jsxImportSource": "@oomfware/jsx",
 		"paths": {
 			"@oomfware/jsx/jsx-runtime": ["./src/jsx-runtime.ts"],
-			"@oomfware/jsx/jsx-dev-runtime": ["./src/jsx-runtime.ts"],
+			"@oomfware/jsx/jsx-dev-runtime": ["./src/jsx-dev-runtime.ts"],
 		},
 	},
 	"include": ["src"],
