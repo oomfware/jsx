@@ -194,5 +194,13 @@ describe('cloneElement', () => {
 			// href should be assignable to anchor props
 			expectTypeOf<{ href: string }>().toExtend<Partial<JSX.IntrinsicElements['a']>>();
 		});
+
+		it('accepts JSX.Element with unknown props', () => {
+			// simulates receiving children as JSX.Element (common in wrapper components)
+			const element: JSX.Element = createElement('div', { class: 'test' });
+			const cloned = cloneElement(element, { id: 'added' });
+			expectTypeOf(cloned).toExtend<JSXElement>();
+			expect(cloned.props).toEqual({ class: 'test', id: 'added' });
+		});
 	});
 });

@@ -82,7 +82,7 @@ export function cloneElement<T extends keyof JSX.IntrinsicElements>(
  * @param children children to replace (if provided)
  * @returns cloned JSX element
  */
-export function cloneElement<P extends {}>(
+export function cloneElement<P>(
 	element: JSXElement<P, Component<P>>,
 	props?: Partial<P> | null,
 	...children: JSXNode[]
@@ -95,7 +95,7 @@ export function cloneElement<P extends {}>(
  * @param children children to replace (if provided)
  * @returns cloned JSX element
  */
-export function cloneElement<P extends {}>(
+export function cloneElement<P>(
 	element: JSXElement<P>,
 	props?: Partial<P> | null,
 	...children: JSXNode[]
