@@ -449,7 +449,7 @@ type AriaRole =
 	| 'treeitem'
 	| (string & {});
 
-interface HTMLAttributes extends AriaAttributes, DOMAttributes {
+export interface HTMLAttributes extends AriaAttributes, DOMAttributes {
 	// Standard HTML Attributes
 	accesskey?: string | undefined;
 	autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters' | undefined | (string & {});
@@ -1094,7 +1094,7 @@ interface VideoHTMLAttributes extends MediaHTMLAttributes {
 //   - "number | string"
 //   - "string"
 //   - union of string literals
-interface SVGAttributes extends AriaAttributes, DOMAttributes {
+export interface SVGAttributes extends AriaAttributes, DOMAttributes {
 	// Attributes which also defined in HTMLAttributes
 	class?: string | undefined;
 	color?: string | undefined;
