@@ -1,4 +1,5 @@
 export type { Component, FC, JSXElement, JSXNode } from './lib/types.js';
+export type { JSX } from './lib/intrinsic-elements.js';
 
 export { Fragment } from './jsx-runtime.js';
 
