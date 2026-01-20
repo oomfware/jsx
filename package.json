@@ -1,7 +1,7 @@
 {
 	"type": "module",
 	"name": "@oomfware/jsx",
-	"version": "0.1.6",
+	"version": "0.1.7",
 	"description": "server-side JSX renderer",
 	"license": "0BSD",
 	"repository": {
