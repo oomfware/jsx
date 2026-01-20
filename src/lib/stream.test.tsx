@@ -270,7 +270,7 @@ describe('stream', () => {
 			const html = await renderToString(
 				<div style={{ color: 'green', 'margin-top': '10px', padding: '5px' }} />,
 			);
-			expect(html).toBe('<div style="color:green;margin-top:10px;padding:5px"></div>');
+			expect(html).toBe('<div style="color:green; margin-top:10px; padding:5px"></div>');
 		});
 	});
 

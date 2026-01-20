@@ -294,8 +294,9 @@ function renderAttributes(props: Record<string, unknown>): string {
 				continue;
 			}
 
+			const len = value.length;
+
 			let idx = 0;
-			let len = value.length;
 			let str = '';
 			let val: any;
 
@@ -317,10 +318,19 @@ function renderAttributes(props: Record<string, unknown>): string {
 				continue;
 			}
 
-			const str = serializeStyle(value as Record<string, string | number>);
+			let str = '';
+			let val;
+
+			for (const key in value) {
+				if ((val = (value as any)[key]) != null) {
+					str = str ? str + '; ' + key + ':' + val : key + ':' + val;
+				}
+			}
+
 			if (str) {
 				attrs += ` style="${escapeHtml(str, true)}"`;
 			}
+
 			continue;
 		}
 
@@ -331,15 +341,6 @@ function renderAttributes(props: Record<string, unknown>): string {
 		}
 	}
 	return attrs;
-}
-
-function serializeStyle(style: Record<string, string | number>): string {
-	const parts: string[] = [];
-	for (const [key, value] of Object.entries(style)) {
-		if (value == null) continue;
-		parts.push(`${key}:${value}`);
-	}
-	return parts.join(';');
 }
 
 // #endregion
