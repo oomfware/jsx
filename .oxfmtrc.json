@@ -1,4 +1,6 @@
 {
+	"$schema": "https://unpkg.com/oxfmt/configuration_schema.json",
+
 	"trailingComma": "all",
 	"useTabs": true,
 	"tabWidth": 2,
@@ -8,29 +10,28 @@
 	"bracketSpacing": true,
 
 	"experimentalSortImports": {
-		"customGroups": [{ "groupName": "bun", "elementNamePattern": ["bun", "bun:"] }],
-		"groups": [
-			["type-builtin", "value-builtin"],
-			"bun",
-			["type-external", "value-external"],
-			["type-parent", "value-parent"],
-			["type-sibling", "type-index", "value-sibling", "value-index"]
-		],
-		"newlinesBetween": true
+		"groups": [["builtin", "bun"], ["external"], ["parent"], ["sibling", "index"]],
+
+		"customGroups": [
+			{
+				"groupName": "bun",
+				"elementNamePattern": ["bun", "bun:"]
+			}
+		]
 	},
 
 	"overrides": [
+		{
+			"files": ["tsconfig.json"],
+			"options": {
+				"parser": "jsonc"
+			}
+		},
 		{
 			"files": ["*.md"],
 			"options": {
 				"printWidth": 100,
 				"proseWrap": "always"
-			}
-		},
-		{
-			"files": ["tsconfig.json", "jsconfig.json"],
-			"options": {
-				"parser": "jsonc"
 			}
 		}
 	]
