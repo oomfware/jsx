@@ -14,6 +14,7 @@ import { decodeUtf8From, encodeUtf8 } from '@atcute/uint8array';
 
 import { Fragment } from '../jsx-runtime.ts';
 
+import { cn } from './cn.ts';
 import {
 	popContextFrame,
 	pushContextFrame,
@@ -294,18 +295,7 @@ function renderAttributes(props: Record<string, unknown>): string {
 				continue;
 			}
 
-			const len = value.length;
-
-			let idx = 0;
-			let str = '';
-			let val: any;
-
-			for (; idx < len; idx++) {
-				if ((val = value[idx])) {
-					str = str ? str + ' ' + val : val;
-				}
-			}
-
+			const str = cn(value);
 			if (str) {
 				attrs += ` class="${escapeHtml(str, true)}"`;
 			}

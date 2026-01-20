@@ -7,7 +7,7 @@ import type { JSXElement, JSXNode } from './types.js';
 /**
  * a single class value that can be conditionally applied
  */
-export type ClassValue = string | false | 0 | null | undefined;
+export type ClassValue = string | false | 0 | null | undefined | ClassValue[];
 
 /**
  * boolean or string boolean for DOM attributes
