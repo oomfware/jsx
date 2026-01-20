@@ -1,8 +1,9 @@
 import { describe, expect, expectTypeOf, it } from 'bun:test';
 
-import type { JSX } from './intrinsic-elements.ts';
 import { Fragment } from '../jsx-runtime.ts';
+
 import { cloneElement, createElement } from './create-element.ts';
+import type { JSX } from './intrinsic-elements.ts';
 import type { Component, JSXElement, JSXNode } from './types.ts';
 
 describe('createElement', () => {
@@ -54,7 +55,8 @@ describe('createElement', () => {
 		});
 
 		it('creates an element with component and children', () => {
-			const Wrapper: Component<{ children?: JSXNode }> = (props) => createElement('div', null, props.children);
+			const Wrapper: Component<{ children?: JSXNode }> = (props) =>
+				createElement('div', null, props.children);
 			const el = createElement(Wrapper, null, 'child content');
 			expect(el.type).toBe(Wrapper);
 			expect(el.props).toEqual({ children: 'child content' });

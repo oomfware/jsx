@@ -198,7 +198,9 @@ describe('stream', () => {
 		it('conditionally applies classes', async () => {
 			const isActive = true;
 			const isDisabled = false;
-			const html = await renderToString(<div class={['btn', isActive && 'active', isDisabled && 'disabled']} />);
+			const html = await renderToString(
+				<div class={['btn', isActive && 'active', isDisabled && 'disabled']} />,
+			);
 			expect(html).toBe('<div class="btn active"></div>');
 		});
 

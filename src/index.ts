@@ -9,12 +9,6 @@ export { cloneElement, createElement, createElement as h } from './lib/create-el
 
 export { createContext, type Context } from './lib/context.js';
 
-export {
-	ErrorBoundary,
-	type ErrorBoundaryProps,
-	Suspense,
-	type SuspenseProps,
-	use,
-} from './lib/suspense.js';
+export { ErrorBoundary, type ErrorBoundaryProps, Suspense, type SuspenseProps, use } from './lib/suspense.js';
 
 export { render, renderToStream, renderToString, type RenderOptions } from './lib/render.js';
