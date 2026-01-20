@@ -11,7 +11,6 @@
 
 	"experimentalSortImports": {
 		"groups": [["builtin", "bun"], ["external"], ["parent"], ["sibling", "index"]],
-
 		"customGroups": [
 			{
 				"groupName": "bun",
