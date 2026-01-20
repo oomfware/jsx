@@ -179,6 +179,43 @@ describe('stream', () => {
 			const html = await renderToString(<button onclick={() => {}} />);
 			expect(html).toBe('<button></button>');
 		});
+
+		it('renders string class as-is', async () => {
+			const html = await renderToString(<div class="foo bar" />);
+			expect(html).toBe('<div class="foo bar"></div>');
+		});
+
+		it('concatenates class array', async () => {
+			const html = await renderToString(<div class={['foo', 'bar', 'baz']} />);
+			expect(html).toBe('<div class="foo bar baz"></div>');
+		});
+
+		it('filters out falsy values from class array', async () => {
+			const html = await renderToString(<div class={['foo', false, 'bar', null, 'baz', undefined, 0]} />);
+			expect(html).toBe('<div class="foo bar baz"></div>');
+		});
+
+		it('conditionally applies classes', async () => {
+			const isActive = true;
+			const isDisabled = false;
+			const html = await renderToString(<div class={['btn', isActive && 'active', isDisabled && 'disabled']} />);
+			expect(html).toBe('<div class="btn active"></div>');
+		});
+
+		it('omits class attribute when array is all falsy', async () => {
+			const html = await renderToString(<div class={[false, null, undefined, 0]} />);
+			expect(html).toBe('<div></div>');
+		});
+
+		it('handles empty class array', async () => {
+			const html = await renderToString(<div class={[]} />);
+			expect(html).toBe('<div></div>');
+		});
+
+		it('handles single-element class array', async () => {
+			const html = await renderToString(<div class={['solo']} />);
+			expect(html).toBe('<div class="solo"></div>');
+		});
 	});
 
 	describe('escaping', () => {

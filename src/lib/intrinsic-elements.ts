@@ -5,6 +5,11 @@ import type * as CSS from 'csstype';
 import type { JSXElement, JSXNode } from './types.js';
 
 /**
+ * a single class value that can be conditionally applied
+ */
+export type ClassValue = string | false | 0 | null | undefined;
+
+/**
  * boolean or string boolean for DOM attributes
  * @see https://developer.mozilla.org/en-US/docs/Web/API/Element/getAttribute
  */
@@ -454,7 +459,7 @@ export interface HTMLAttributes extends AriaAttributes, DOMAttributes {
 	accesskey?: string | undefined;
 	autocapitalize?: 'off' | 'none' | 'on' | 'sentences' | 'words' | 'characters' | undefined | (string & {});
 	autofocus?: boolean | undefined;
-	class?: string | undefined;
+	class?: string | ClassValue[] | undefined;
 	contenteditable?: Booleanish | 'inherit' | 'plaintext-only' | undefined;
 	/** @deprecated */
 	contextmenu?: string | undefined;
@@ -1096,7 +1101,7 @@ interface VideoHTMLAttributes extends MediaHTMLAttributes {
 //   - union of string literals
 export interface SVGAttributes extends AriaAttributes, DOMAttributes {
 	// Attributes which also defined in HTMLAttributes
-	class?: string | undefined;
+	class?: string | ClassValue[] | undefined;
 	color?: string | undefined;
 	height?: number | string | undefined;
 	id?: string | undefined;

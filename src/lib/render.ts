@@ -17,11 +17,11 @@ import { Fragment } from '../jsx-runtime.ts';
 import {
 	popContextFrame,
 	pushContextFrame,
+	setActiveRenderContext,
 	type RenderContext,
 	type Segment,
-	setActiveRenderContext,
 } from './render-context.ts';
-import { ErrorBoundary, type ErrorBoundaryProps, Suspense, type SuspenseProps } from './suspense.ts';
+import { ErrorBoundary, Suspense, type ErrorBoundaryProps, type SuspenseProps } from './suspense.ts';
 import type { Component, JSXElement, JSXNode } from './types.ts';
 
 const HEAD_ELEMENTS = new Set(['title', 'meta', 'link', 'style']);
@@ -275,18 +275,55 @@ function buildHeadElementSegment(
 function renderAttributes(props: Record<string, unknown>): string {
 	let attrs = '';
 	for (const key in props) {
-		if (FRAMEWORK_PROPS.has(key)) continue;
+		if (FRAMEWORK_PROPS.has(key)) {
+			continue;
+		}
+
 		const value = props[key];
-		if (value === undefined || value === null || value === false) continue;
-		if (typeof value === 'function') continue;
-		// style object -> string
-		if (key === 'style' && typeof value === 'object') {
-			const styleStr = serializeStyle(value as Record<string, string | number>);
-			if (styleStr) {
-				attrs += ` style="${escapeHtml(styleStr, true)}"`;
+		if (value === undefined || value === null || value === false) {
+			continue;
+		}
+
+		if (typeof value === 'function') {
+			continue;
+		}
+
+		if (key === 'class') {
+			if (!Array.isArray(value)) {
+				attrs = ` class="${escapeHtml(value, true)}"`;
+				continue;
+			}
+
+			let idx = 0;
+			let len = value.length;
+			let str = '';
+			let val: any;
+
+			for (; idx < len; idx++) {
+				if ((val = value[idx])) {
+					str = str ? str + ' ' + val : val;
+				}
+			}
+
+			if (str) {
+				attrs += ` class="${escapeHtml(str, true)}"`;
 			}
 			continue;
 		}
+
+		if (key === 'style') {
+			if (typeof value !== 'object') {
+				attrs += ` style="${escapeHtml(value, true)}"`;
+				continue;
+			}
+
+			const str = serializeStyle(value as Record<string, string | number>);
+			if (str) {
+				attrs += ` style="${escapeHtml(str, true)}"`;
+			}
+			continue;
+		}
+
 		if (value === true) {
 			attrs += ` ${key}`;
 		} else {
@@ -363,9 +400,7 @@ function buildSuspenseSegment(props: SuspenseProps, ctx: RenderContext, path: st
 			// re-render function that handles subsequent promise throws
 			const rerender = (attempt: number): Promise<void> | void => {
 				if (attempt >= MAX_SUSPENSE_ATTEMPTS) {
-					throw new Error(
-						`suspense boundary exceeded maximum retry attempts (${MAX_SUSPENSE_ATTEMPTS})`,
-					);
+					throw new Error(`suspense boundary exceeded maximum retry attempts (${MAX_SUSPENSE_ATTEMPTS})`);
 				}
 				try {
 					seg.content = buildSegment(props.children, asyncCtx, suspenseId);
@@ -394,11 +429,7 @@ function buildSuspenseSegment(props: SuspenseProps, ctx: RenderContext, path: st
 	}
 }
 
-function buildErrorBoundarySegment(
-	props: ErrorBoundaryProps,
-	ctx: RenderContext,
-	path: string,
-): Segment {
+function buildErrorBoundarySegment(props: ErrorBoundaryProps, ctx: RenderContext, path: string): Segment {
 	// snapshot context for potential async fallback rendering
 	const asyncCtx: RenderContext = {
 		...ctx,
@@ -445,11 +476,7 @@ async function resolveBlocking(segment: Segment): Promise<void> {
 		try {
 			await resolveBlocking(segment.children);
 		} catch (error) {
-			segment.fallbackSegment = buildSegment(
-				segment.fallbackFn(error),
-				segment.renderContext,
-				segment.path,
-			);
+			segment.fallbackSegment = buildSegment(segment.fallbackFn(error), segment.renderContext, segment.path);
 		}
 		return;
 	}

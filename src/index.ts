@@ -1,5 +1,5 @@
 export type { Component, FC, JSXElement, JSXNode } from './lib/types.js';
-export type { HTMLAttributes, JSX, SVGAttributes } from './lib/intrinsic-elements.js';
+export type { ClassValue, HTMLAttributes, JSX, SVGAttributes } from './lib/intrinsic-elements.js';
 
 export { Fragment } from './jsx-runtime.js';
 
