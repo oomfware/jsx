@@ -148,13 +148,10 @@ interface DOMAttributes {
 
 export interface CSSProperties extends CSS.PropertiesHyphen<string | number> {
 	/**
-	 * The index signature was removed to enable closed typing for style
-	 * using CSSType. You're able to use type assertion or module augmentation
-	 * to add properties or an index signature of your own.
-	 *
-	 * For examples and more information, visit:
-	 * https://github.com/frenic/csstype#what-should-i-do-when-i-get-type-errors
+	 * CSS custom properties (CSS variables)
+	 * @see https://developer.mozilla.org/en-US/docs/Web/CSS/--*
 	 */
+	[key: `--${string}`]: string | number | undefined;
 }
 
 // All the WAI-ARIA 1.1 attributes from https://www.w3.org/TR/wai-aria-1.1/
