@@ -10,7 +10,7 @@ the source code is organized under `src/`:
 
 ### project management
 
-- tools like Node.js, Bun and pnpm are managed by mise, to run them, use `mise exec -- pnpm ...`
+- tools like Node.js, Bun and pnpm are managed by mise
 - build with `pnpm run build` (tsdown)
 - typecheck with `pnpm run typecheck` (tsc)
 - format with `pnpm run fmt` (oxfmt)
