@@ -14,7 +14,7 @@
 		"customGroups": [
 			{
 				"groupName": "bun",
-				"elementNamePattern": ["bun", "bun:"]
+				"elementNamePattern": ["bun", "bun:*"]
 			}
 		]
 	},
