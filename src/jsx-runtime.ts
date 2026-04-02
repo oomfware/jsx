@@ -1,4 +1,4 @@
-import type { Component, JSXElement, JSXNode } from './lib/types.ts';
+import { JSXElement, type Component, type JSXNode } from './lib/types.ts';
 
 /**
  * creates a JSX element
@@ -7,7 +7,7 @@ import type { Component, JSXElement, JSXNode } from './lib/types.ts';
  * @returns JSX element
  */
 export function jsx<P, T extends string | Component<any>>(type: T, props: P): JSXElement<P, T> {
-	return { type, props };
+	return new JSXElement(type, props);
 }
 
 export { jsx as jsxs };

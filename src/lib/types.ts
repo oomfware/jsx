@@ -19,9 +19,14 @@ export type FC<P = {}> = Component<P>;
  * @template P props type
  * @template T element type (tag string or component)
  */
-export interface JSXElement<P = unknown, T extends string | Component<any> = string | Component<any>> {
+export class JSXElement<P = unknown, T extends string | Component<any> = string | Component<any>> {
 	type: T;
 	props: P;
+
+	constructor(type: T, props: P) {
+		this.type = type;
+		this.props = props;
+	}
 }
 
 // #endregion

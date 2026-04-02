@@ -1,5 +1,5 @@
 import type { JSX } from './intrinsic-elements.ts';
-import type { Component, JSXElement, JSXNode } from './types.ts';
+import { JSXElement, type Component, type JSXNode } from './types.ts';
 
 // #region createElement
 
@@ -55,7 +55,7 @@ export function createElement(
 		finalProps.children = children;
 	}
 
-	return { type, props: finalProps };
+	return new JSXElement(type, finalProps);
 }
 
 // #endregion
@@ -115,7 +115,7 @@ export function cloneElement(
 		finalProps.children = children;
 	}
 
-	return { type: element.type, props: finalProps };
+	return new JSXElement(element.type, finalProps);
 }
 
 // #endregion

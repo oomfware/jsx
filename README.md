@@ -1,6 +1,6 @@
 # @oomfware/jsx
 
-server-side JSX renderer with streaming support, Suspense, and context.
+server-side JSX renderer with context and head hoisting.
 
 ```sh
 npm install @oomfware/jsx
@@ -23,7 +23,7 @@ render JSX responses in your route handlers:
 
 ```tsx
 import { createRouter, route } from '@oomfware/fetch-router';
-import { render, Suspense, use } from '@oomfware/jsx';
+import { render } from '@oomfware/jsx';
 
 const routes = route({
 	home: '/',
@@ -63,54 +63,6 @@ function HomePage() {
 }
 ```
 
-### streaming with Suspense
-
-the page shell streams immediately while async sections resolve in the background:
-
-```tsx
-import { render, Suspense, use } from '@oomfware/jsx';
-
-interface User {
-	name: string;
-	posts: { title: string }[];
-}
-
-function UserPosts({ user }: { user: Promise<User> }) {
-	const { posts } = use(user);
-	return (
-		<ul>
-			{posts.map((post) => (
-				<li>{post.title}</li>
-			))}
-		</ul>
-	);
-}
-
-function UserPage({ user }: { user: Promise<User> }) {
-	return (
-		<html>
-			<head>
-				<title>user profile</title>
-			</head>
-			<body>
-				<h1>posts</h1>
-				<Suspense fallback={<div>loading posts...</div>}>
-					<UserPosts user={user} />
-				</Suspense>
-			</body>
-		</html>
-	);
-}
-
-router.get('/users/:id', ({ params }) => {
-	const user = fetch(`/api/users/${params.id}`).then((r) => r.json());
-	return render(<UserPage user={user} />);
-});
-```
-
-the promise is created in the handler and passed down - `use()` caches by promise identity, so the
-same instance must be used across renders.
-
 ### error responses
 
 render errors with custom status codes:
@@ -139,10 +91,10 @@ function ThemedButton() {
 	return <button class={theme}>click me</button>;
 }
 
-const html = await renderToString(
-	<ThemeContext.Provider value="dark">
+const html = renderToString(
+	<ThemeContext value="dark">
 		<ThemedButton />
-	</ThemeContext.Provider>,
+	</ThemeContext>,
 );
 // <button class="dark">click me</button>
 ```

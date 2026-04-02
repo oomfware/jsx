@@ -32,7 +32,6 @@
 		"prepublishOnly": "pnpm run build"
 	},
 	"dependencies": {
-		"@atcute/uint8array": "^1.1.1",
 		"csstype": "^3.2.3"
 	},
 	"devDependencies": {

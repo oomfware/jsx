@@ -1,4 +1,5 @@
-export type { Component, FC, JSXElement, JSXNode } from './lib/types.js';
+export type { Component, FC, JSXNode } from './lib/types.js';
+export { JSXElement } from './lib/types.js';
 export type { ClassValue, HTMLAttributes, JSX, SVGAttributes } from './lib/intrinsic-elements.js';
 
 export { cn } from './lib/cn.js';
@@ -7,8 +8,6 @@ export { Fragment } from './jsx-runtime.js';
 
 export { cloneElement, createElement, createElement as h } from './lib/create-element.js';
 
-export { createContext, type Context } from './lib/context.js';
+export { Context, createContext, use } from './lib/context.js';
 
-export { ErrorBoundary, type ErrorBoundaryProps, Suspense, type SuspenseProps, use } from './lib/suspense.js';
-
-export { render, renderToStream, renderToString, type RenderOptions } from './lib/render.js';
+export { render, renderToString } from './lib/render.js';

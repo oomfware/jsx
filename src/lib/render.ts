@@ -1,32 +1,137 @@
 /**
- * streaming JSX renderer
+ * synchronous JSX renderer
  *
  * architecture:
- * - segment tree: we build a tree of segments (static text, composites, suspense
- *   boundaries) then serialize to HTML
- * - suspense: components can throw promises via use(), caught at Suspense boundaries
- *   which render fallback immediately and stream resolved content later
+ * - single-pass recursive render that builds an HTML string directly
  * - head hoisting: <title>, <meta>, <link>, <style> found outside <head> are
  *   collected and injected into <head> during finalization
  */
 
-import { decodeUtf8From, encodeUtf8 } from '@atcute/uint8array';
-
 import { Fragment } from '../jsx-runtime.ts';
 
 import { cn } from './cn.ts';
-import {
-	popContextFrame,
-	pushContextFrame,
-	setActiveRenderContext,
-	type RenderContext,
-	type Segment,
-} from './render-context.ts';
-import { ErrorBoundary, Suspense, type ErrorBoundaryProps, type SuspenseProps } from './suspense.ts';
-import type { Component, JSXElement, JSXNode } from './types.ts';
+import { Context } from './context.ts';
+import { provide, restoreProvides, setActiveRenderContext, type RenderContext } from './render-context.ts';
+import { JSXElement, type Component, type JSXNode } from './types.ts';
 
+/**
+ * renders JSX to a string
+ * @param node JSX node to render
+ * @returns HTML string
+ */
+export function renderToString(node: JSXNode): string {
+	const ctx: RenderContext = {
+		depth: 0,
+		headElements: [],
+		hasHtmlRoot: false,
+		insideHead: false,
+		insideSvg: false,
+		provideLog: [],
+		provideCount: 0,
+	};
+
+	const prev = setActiveRenderContext(ctx);
+	try {
+		const html = renderNodeInner(node, ctx);
+		// skip finalization when nothing to inject
+		if (ctx.hasHtmlRoot || ctx.headElements.length > 0) {
+			return finalizeHtml(html, ctx);
+		}
+		return html;
+	} finally {
+		restoreProvides(ctx, 0);
+		setActiveRenderContext(prev);
+	}
+}
+
+/**
+ * renders JSX to a Response
+ * @param node JSX node to render
+ * @param init optional ResponseInit (status, headers, etc.)
+ * @returns Response with HTML body
+ */
+export function render(node: JSXNode, init?: ResponseInit): Response {
+	const html = renderToString(node);
+
+	// @ts-expect-error: not sure why.
+	const headers = new Headers(init?.headers);
+	if (!headers.has('Content-Type')) {
+		headers.set('Content-Type', 'text/html; charset=utf-8');
+	}
+
+	return new Response(html, { ...init, headers });
+}
+
+// #region Node rendering
+
+function renderNodeInner(node: JSXNode, ctx: RenderContext): string {
+	// fast path: JSX elements, arrays, and null are all objects
+	if (typeof node === 'object') {
+		if (node === null) {
+			return '';
+		}
+		// JSX element — instanceof is faster than `in` or property checks
+		if (node instanceof JSXElement) {
+			const { type, props } = node;
+			if (type === Fragment) {
+				// oxlint-disable-next-line no-unsafe-type-assertion
+				const children = (props as { children?: JSXNode }).children;
+				return children != null ? renderNodeInner(children, ctx) : '';
+			}
+			if (typeof type === 'string') {
+				// oxlint-disable-next-line no-unsafe-type-assertion
+				return renderElement(type, props as Record<string, unknown>, ctx);
+			}
+			if (type instanceof Context) {
+				// oxlint-disable-next-line no-unsafe-type-assertion
+				return renderContextNode(type, props as Record<string, unknown>, ctx);
+			}
+			if (typeof type === 'function') {
+				// oxlint-disable-next-line no-unsafe-type-assertion
+				return renderNodeInner((type as Component)(props as Record<string, unknown>), ctx);
+			}
+			return '';
+		}
+		// arrays (most common iterable) — index loop avoids iterator overhead
+		if (Array.isArray(node)) {
+			let html = '';
+			for (let i = 0; i < node.length; i++) {
+				// oxlint-disable-next-line no-unsafe-type-assertion
+				html += renderNodeInner(node[i] as JSXNode, ctx);
+			}
+			return html;
+		}
+		// non-array iterables (generators, etc.) — property access over `in`
+		// oxlint-disable-next-line no-unsafe-type-assertion, no-unsafe-member-access
+		if ((node as any)[Symbol.iterator]) {
+			let html = '';
+			for (const child of node as Iterable<JSXNode>) {
+				html += renderNodeInner(child, ctx);
+			}
+			return html;
+		}
+		return '';
+	}
+	// string is the second most common
+	if (typeof node === 'string') {
+		return escapeContent(node);
+	}
+	// numbers never contain & or <
+	if (typeof node === 'number' || typeof node === 'bigint') {
+		return String(node);
+	}
+	// boolean, undefined
+	return '';
+}
+
+// #endregion
+
+// #region Element rendering
+
+/** set of tags that are hoisted into <head> */
 const HEAD_ELEMENTS = new Set(['title', 'meta', 'link', 'style']);
-const MAX_SUSPENSE_ATTEMPTS = 20;
+
+/** set of self-closing (void) HTML tags */
 const SELF_CLOSING_TAGS = new Set([
 	'area',
 	'base',
@@ -43,251 +148,68 @@ const SELF_CLOSING_TAGS = new Set([
 	'track',
 	'wbr',
 ]);
-/** props that shouldn't be rendered as HTML attributes */
-const FRAMEWORK_PROPS = new Set(['children', 'dangerouslySetInnerHTML']);
 
-// #region Segment helpers
-
-function staticSeg(html: string): Segment {
-	return { kind: 'static', html };
-}
-
-function compositeSeg(parts: Segment[]): Segment {
-	return { kind: 'composite', parts };
-}
-
-const EMPTY_SEGMENT = staticSeg('');
-
-// #endregion
-
-export interface RenderOptions {
-	onError?: (error: unknown) => void;
-}
-
-/**
- * renders JSX to a readable stream
- * @param node JSX node to render
- * @param options render options
- * @returns readable stream of UTF-8 encoded HTML
- */
-export function renderToStream(node: JSXNode, options?: RenderOptions): ReadableStream<Uint8Array> {
-	const onError = options?.onError ?? ((error) => console.error(error));
-	const context: RenderContext = {
-		contextStack: [],
-		currentFrame: null,
-		headElements: [],
-		idsByPath: new Map(),
-		insideHead: false,
-		insideSvg: false,
-		onError,
-		pendingSuspense: [],
-	};
-
-	return new ReadableStream({
-		async start(controller) {
-			try {
-				const root = buildSegment(node, context, '');
-				await resolveBlocking(root);
-
-				const html = serializeSegment(root);
-				const finalHtml = finalizeHtml(html, context);
-				controller.enqueue(encodeUtf8(finalHtml));
-
-				// stream pending suspense boundaries as they resolve
-				if (context.pendingSuspense.length > 0) {
-					await streamPendingSuspense(context, controller);
-				}
-
-				controller.close();
-			} catch (error) {
-				onError(error);
-				controller.error(error);
-			}
-		},
-	});
-}
-
-/**
- * renders JSX to a string (non-streaming)
- * @param node JSX node to render
- * @param options render options
- * @returns promise resolving to HTML string
- */
-export async function renderToString(node: JSXNode, options?: RenderOptions): Promise<string> {
-	const stream = renderToStream(node, options);
-	const reader = stream.getReader();
-
-	let html = '';
-	while (true) {
-		// oxlint-disable-next-line no-await-in-loop -- sequential stream consumption
-		const { done, value } = await reader.read();
-		if (done) {
-			break;
-		}
-
-		html += decodeUtf8From(value);
+function renderElement(tag: string, props: Record<string, unknown>, ctx: RenderContext): string {
+	if (tag === 'head') {
+		return renderHeadElement(tag, props, ctx);
 	}
 
-	return html;
-}
-
-/**
- * renders JSX to a streaming Response
- * @param node JSX node to render
- * @param init optional ResponseInit (status, headers, etc.)
- * @returns Response with streaming HTML body
- */
-export function render(node: JSXNode, init?: ResponseInit): Response {
-	const stream = renderToStream(node);
-
-	// @ts-expect-error: not sure why.
-	const headers = new Headers(init?.headers);
-	if (!headers.has('Content-Type')) {
-		headers.set('Content-Type', 'text/html; charset=utf-8');
+	if (tag === 'html' && ctx.depth === 0) {
+		ctx.hasHtmlRoot = true;
 	}
 
-	return new Response(stream, { ...init, headers });
+	if (!ctx.insideHead && HEAD_ELEMENTS.has(tag)) {
+		// hoist to <head>
+		ctx.headElements.push(renderElementHtml(tag, props, ctx));
+		return '';
+	}
+
+	return renderElementHtml(tag, props, ctx);
 }
 
-// #region Segment building
-
-function isJSXElement(node: unknown): node is JSXElement {
-	return typeof node === 'object' && node !== null && 'type' in node && 'props' in node;
-}
-
-function isHeadElement(tag: string): boolean {
-	return HEAD_ELEMENTS.has(tag);
-}
-
-function buildSegment(node: JSXNode, ctx: RenderContext, path: string): Segment {
-	const prev = setActiveRenderContext(ctx);
-	try {
-		return buildSegmentInner(node, ctx, path);
-	} finally {
-		setActiveRenderContext(prev);
-	}
-}
-
-function buildSegmentInner(node: JSXNode, context: RenderContext, path: string): Segment {
-	// primitives
-	if (typeof node === 'string' || typeof node === 'number' || typeof node === 'bigint') {
-		return staticSeg(escapeHtml(node, false));
-	}
-	if (node === null || node === undefined || typeof node === 'boolean') {
-		return EMPTY_SEGMENT;
-	}
-	// iterables (arrays, generators, etc.)
-	if (typeof node === 'object' && Symbol.iterator in node) {
-		const parts: Segment[] = [];
-		for (const child of node) {
-			parts.push(buildSegmentInner(child, context, path));
-		}
-		return compositeSeg(parts);
-	}
-	// JSX elements
-	if (isJSXElement(node)) {
-		const { type, props } = node;
-		// Fragment
-		if (type === Fragment) {
-			// oxlint-disable-next-line no-unsafe-type-assertion
-			const children = (props as { children?: JSXNode }).children;
-			return children != null ? buildSegmentInner(children, context, path) : EMPTY_SEGMENT;
-		}
-		// intrinsic elements (HTML tags)
-		if (typeof type === 'string') {
-			const tag = type;
-
-			if (tag === 'head') {
-				// oxlint-disable-next-line no-unsafe-type-assertion
-				return buildHeadElementSegment(tag, props as Record<string, unknown>, context, path);
-			}
-
-			if (!context.insideHead && isHeadElement(tag)) {
-				// hoist to <head>
-				// oxlint-disable-next-line no-unsafe-type-assertion
-				const elementSeg = buildElementSegment(tag, props as Record<string, unknown>, context, path);
-				context.headElements.push(serializeSegment(elementSeg));
-				return EMPTY_SEGMENT;
-			}
-
-			// oxlint-disable-next-line no-unsafe-type-assertion
-			return buildElementSegment(tag, props as Record<string, unknown>, context, path);
-		}
-		// function components
-		if (typeof type === 'function') {
-			// Suspense boundary
-			if (type === Suspense) {
-				// oxlint-disable-next-line no-unsafe-type-assertion
-				return buildSuspenseSegment(props as SuspenseProps, context, path);
-			}
-			// ErrorBoundary
-			if (type === ErrorBoundary) {
-				// oxlint-disable-next-line no-unsafe-type-assertion
-				return buildErrorBoundarySegment(props as ErrorBoundaryProps, context, path);
-			}
-			// oxlint-disable-next-line no-unsafe-type-assertion
-			return buildComponentSegment(type, props as Record<string, unknown>, context, path);
-		}
-	}
-	return EMPTY_SEGMENT;
-}
-
-// #endregion
-
-// #region Element building
-
-function buildElementSegment(
-	tag: string,
-	props: Record<string, unknown>,
-	context: RenderContext,
-	path: string,
-): Segment {
-	const currentIsSvg = context.insideSvg || tag === 'svg';
+function renderElementHtml(tag: string, props: Record<string, unknown>, ctx: RenderContext): string {
 	const attrs = renderAttributes(props);
+
 	// self-closing tags
 	if (SELF_CLOSING_TAGS.has(tag)) {
-		return staticSeg(`<${tag}${attrs}>`);
+		return '<' + tag + attrs + '>';
 	}
+
 	// dangerouslySetInnerHTML
 	// oxlint-disable-next-line no-unsafe-type-assertion
 	const innerHTML = props.dangerouslySetInnerHTML as { __html: string } | undefined;
 	if (innerHTML) {
-		return staticSeg(`<${tag}${attrs}>${innerHTML.__html}</${tag}>`);
+		return '<' + tag + attrs + '>' + innerHTML.__html + '</' + tag + '>';
 	}
+
 	// normal element with children
-	const open = staticSeg(`<${tag}${attrs}>`);
-	const previousInsideSvg = context.insideSvg;
-	context.insideSvg = tag === 'foreignObject' ? false : currentIsSvg;
-	const children =
-		// oxlint-disable-next-line no-unsafe-type-assertion
-		props.children != null ? buildSegment(props.children as JSXNode, context, path) : EMPTY_SEGMENT;
-	context.insideSvg = previousInsideSvg;
-	const close = staticSeg(`</${tag}>`);
-	return compositeSeg([open, children, close]);
+	const previousInsideSvg = ctx.insideSvg;
+	ctx.insideSvg = tag === 'foreignObject' ? false : ctx.insideSvg || tag === 'svg';
+	ctx.depth++;
+	// oxlint-disable-next-line no-unsafe-type-assertion
+	const children = props.children != null ? renderNodeInner(props.children as JSXNode, ctx) : '';
+	ctx.depth--;
+	ctx.insideSvg = previousInsideSvg;
+
+	return '<' + tag + attrs + '>' + children + '</' + tag + '>';
 }
 
-function buildHeadElementSegment(
-	tag: string,
-	props: Record<string, unknown>,
-	context: RenderContext,
-	path: string,
-): Segment {
+function renderHeadElement(tag: string, props: Record<string, unknown>, ctx: RenderContext): string {
 	const attrs = renderAttributes(props);
-	const previousInsideHead = context.insideHead;
-	context.insideHead = true;
-	const open = staticSeg(`<${tag}${attrs}>`);
-	const children =
-		// oxlint-disable-next-line no-unsafe-type-assertion
-		props.children != null ? buildSegment(props.children as JSXNode, context, path) : EMPTY_SEGMENT;
-	context.insideHead = previousInsideHead;
-	const close = staticSeg(`</${tag}>`);
-	return compositeSeg([open, children, close]);
+	const previousInsideHead = ctx.insideHead;
+	ctx.insideHead = true;
+	ctx.depth++;
+	// oxlint-disable-next-line no-unsafe-type-assertion
+	const children = props.children != null ? renderNodeInner(props.children as JSXNode, ctx) : '';
+	ctx.depth--;
+	ctx.insideHead = previousInsideHead;
+	return '<' + tag + attrs + '>' + children + '</' + tag + '>';
 }
 
 function renderAttributes(props: Record<string, unknown>): string {
 	let attrs = '';
 	for (const key in props) {
-		if (FRAMEWORK_PROPS.has(key)) {
+		if (key === 'children' || key === 'dangerouslySetInnerHTML') {
 			continue;
 		}
 
@@ -302,20 +224,20 @@ function renderAttributes(props: Record<string, unknown>): string {
 
 		if (key === 'class') {
 			if (!Array.isArray(value)) {
-				attrs = ` class="${escapeHtml(value, true)}"`;
+				attrs += ' class="' + escapeAttr(value) + '"';
 				continue;
 			}
 
 			const str = cn(value);
 			if (str) {
-				attrs += ` class="${escapeHtml(str, true)}"`;
+				attrs += ' class="' + escapeAttr(str) + '"';
 			}
 			continue;
 		}
 
 		if (key === 'style') {
 			if (typeof value !== 'object') {
-				attrs += ` style="${escapeHtml(value, true)}"`;
+				attrs += ' style="' + escapeAttr(value) + '"';
 				continue;
 			}
 
@@ -331,16 +253,16 @@ function renderAttributes(props: Record<string, unknown>): string {
 			}
 
 			if (str) {
-				attrs += ` style="${escapeHtml(str, true)}"`;
+				attrs += ' style="' + escapeAttr(str) + '"';
 			}
 
 			continue;
 		}
 
 		if (value === true) {
-			attrs += ` ${key}`;
+			attrs += ' ' + key;
 		} else {
-			attrs += ` ${key}="${escapeHtml(value, true)}"`;
+			attrs += ' ' + key + '="' + escapeAttr(value) + '"';
 		}
 	}
 	return attrs;
@@ -348,215 +270,16 @@ function renderAttributes(props: Record<string, unknown>): string {
 
 // #endregion
 
-// #region Component building
+// #region Context rendering
 
-function buildComponentSegment(
-	type: Component,
-	props: Record<string, unknown>,
-	ctx: RenderContext,
-	path: string,
-): Segment {
-	// call component
-	const result = type(props);
-	// if component called provide(), push frame before rendering children
-	const hadFrame = pushContextFrame();
+function renderContextNode(context: Context<unknown>, props: Record<string, unknown>, ctx: RenderContext): string {
+	const savedCount = ctx.provideCount;
+	provide(context, props.value);
 	try {
-		return buildSegmentInner(result, ctx, path);
+		// oxlint-disable-next-line no-unsafe-type-assertion
+		return props.children != null ? renderNodeInner(props.children as JSXNode, ctx) : '';
 	} finally {
-		popContextFrame(hadFrame);
-	}
-}
-
-function buildSuspenseSegment(props: SuspenseProps, ctx: RenderContext, path: string): Segment {
-	// generate unique id for this suspense boundary
-	const nextIndex = (ctx.idsByPath.get(path) ?? 0) + 1;
-	ctx.idsByPath.set(path, nextIndex);
-	const id = path ? `${path}-${nextIndex}` : `${nextIndex}`;
-	const suspenseId = `s${id}`;
-
-	try {
-		// try to render children synchronously
-		const content = buildSegment(props.children, ctx, suspenseId);
-		// no suspension - return content directly (no boundary needed)
-		return content;
-	} catch (thrown) {
-		// check if it's a promise (suspension)
-		if (thrown instanceof Promise) {
-			// render fallback
-			const fallback = buildSegment(props.fallback, ctx, suspenseId);
-
-			// create suspense segment
-			const seg: Segment = {
-				kind: 'suspense',
-				id: suspenseId,
-				fallback,
-				content: null,
-			};
-
-			// snapshot context stack for async re-render (parent frames will be popped
-			// by the time the promise resolves)
-			const asyncCtx: RenderContext = {
-				...ctx,
-				contextStack: [...ctx.contextStack],
-				currentFrame: null,
-			};
-
-			// re-render function that handles subsequent promise throws
-			const rerender = (attempt: number): Promise<void> | void => {
-				if (attempt >= MAX_SUSPENSE_ATTEMPTS) {
-					// oxlint-disable-next-line preserve-caught-error -- not re-throwing; new error for max retries
-					throw new Error(`suspense boundary exceeded maximum retry attempts (${MAX_SUSPENSE_ATTEMPTS})`);
-				}
-				try {
-					seg.content = buildSegment(props.children, asyncCtx, suspenseId);
-				} catch (err) {
-					if (err instanceof Promise) {
-						// component threw another promise - wait and retry
-						return err.then(() => rerender(attempt + 1));
-					}
-					throw err;
-				}
-			};
-
-			// set up promise to re-render children when resolved
-			const pending = thrown.then(() => rerender(1));
-			seg.pending = pending;
-
-			// track for streaming
-			const tracked = pending.then(() => seg.content!);
-			tracked.catch(() => {}); // prevent unhandled rejection if resolveBlocking catches first
-			ctx.pendingSuspense.push({ id: suspenseId, promise: tracked });
-
-			return seg;
-		}
-		// not a promise - re-throw
-		throw thrown;
-	}
-}
-
-function buildErrorBoundarySegment(props: ErrorBoundaryProps, ctx: RenderContext, path: string): Segment {
-	// snapshot context for potential async fallback rendering
-	const asyncCtx: RenderContext = {
-		...ctx,
-		contextStack: [...ctx.contextStack],
-		currentFrame: null,
-	};
-
-	try {
-		const children = buildSegment(props.children, ctx, path);
-		return {
-			kind: 'error-boundary',
-			children,
-			fallbackFn: props.fallback,
-			renderContext: asyncCtx,
-			path,
-			fallbackSegment: null,
-		};
-	} catch (error) {
-		if (error instanceof Promise) {
-			throw error; // let Suspense handle it
-		}
-		// sync error - render fallback immediately
-		return buildSegment(props.fallback(error), ctx, path);
-	}
-}
-
-// #endregion
-
-// #region Serialization
-
-/** resolve all blocking suspense boundaries and error boundaries */
-async function resolveBlocking(segment: Segment): Promise<void> {
-	if (segment.kind === 'suspense') {
-		if (segment.pending) {
-			await segment.pending;
-			segment.pending = undefined;
-		}
-		if (segment.content) {
-			await resolveBlocking(segment.content);
-		}
-		return;
-	}
-	if (segment.kind === 'error-boundary') {
-		try {
-			await resolveBlocking(segment.children);
-		} catch (error) {
-			segment.fallbackSegment = buildSegment(segment.fallbackFn(error), segment.renderContext, segment.path);
-		}
-		return;
-	}
-	if (segment.kind === 'composite') {
-		for (const part of segment.parts) {
-			// oxlint-disable-next-line no-await-in-loop -- parts must resolve sequentially
-			await resolveBlocking(part);
-		}
-	}
-}
-
-/** serialize segment tree to HTML string */
-function serializeSegment(seg: Segment): string {
-	if (seg.kind === 'static') {
-		return seg.html;
-	}
-	if (seg.kind === 'composite') {
-		return seg.parts.map(serializeSegment).join('');
-	}
-	if (seg.kind === 'error-boundary') {
-		return serializeSegment(seg.fallbackSegment ?? seg.children);
-	}
-	// suspense - always render fallback; resolved content streams in template
-	return `<!--$s:${seg.id}-->${serializeSegment(seg.fallback)}<!--/$s:${seg.id}-->`;
-}
-
-// #endregion
-
-// #region Streaming
-
-/** suspense runtime function name */
-const SR = '$sr';
-/** suspense runtime - injected once, swaps template content with fallback */
-const SUSPENSE_RUNTIME = `<script>${SR}=(t,i,s,e)=>{i="$s:"+t.dataset.suspense;s=document.createTreeWalker(document,128);while(e=s.nextNode())if(e.data===i){while(e.nextSibling?.data!=="/"+i)e.nextSibling.remove();e.nextSibling.replaceWith(...t.content.childNodes);e.remove();break}t.remove()}</script>`;
-
-async function streamPendingSuspense(
-	context: RenderContext,
-	controller: ReadableStreamDefaultController<Uint8Array>,
-): Promise<void> {
-	controller.enqueue(encodeUtf8(SUSPENSE_RUNTIME));
-
-	while (true) {
-		const batch = context.pendingSuspense;
-		if (batch.length === 0) {
-			break;
-		}
-		context.pendingSuspense = [];
-
-		// oxlint-disable-next-line no-await-in-loop -- batches must resolve sequentially
-		await Promise.all(
-			batch.map(async ({ id, promise }) => {
-				let resolvedSegment: Segment;
-				try {
-					resolvedSegment = await promise;
-				} catch {
-					// promise rejected - error was caught by an error boundary
-					return;
-				}
-
-				try {
-					await resolveBlocking(resolvedSegment);
-
-					const html = serializeSegment(resolvedSegment);
-
-					controller.enqueue(
-						encodeUtf8(
-							`<template data-suspense="${id}">${html}</template>` +
-								`<script>${SR}(document.currentScript.previousElementSibling)</script>`,
-						),
-					);
-				} catch (error) {
-					context.onError(error);
-				}
-			}),
-		);
+		restoreProvides(ctx, savedCount);
 	}
 }
 
@@ -564,49 +287,83 @@ async function streamPendingSuspense(
 
 // #region Utilities
 
-const ATTR_REGEX = /[&"]/g;
-const CONTENT_REGEX = /[&<]/g;
-
-function escapeHtml(value: unknown, isAttr: boolean): string {
-	// oxlint-disable-next-line no-base-to-string -- intentional; callers ensure stringifiable values
-	const str = String(value ?? '');
-	const pattern = isAttr ? ATTR_REGEX : CONTENT_REGEX;
-	pattern.lastIndex = 0;
-
+/** escapes & and < for text content */
+function escapeContent(str: string): string {
+	const len = str.length;
+	let start = 0;
 	let escaped = '';
-	let last = 0;
 
-	while (pattern.test(str)) {
-		const i = pattern.lastIndex - 1;
-		const ch = str[i];
-		escaped += str.substring(last, i) + (ch === '&' ? '&amp;' : ch === '"' ? '&quot;' : '&lt;');
-		last = i + 1;
+	for (let i = 0; i < len; i++) {
+		const ch = str.charCodeAt(i);
+		if (ch === 38) {
+			// &
+			escaped += str.substring(start, i) + '&amp;';
+			start = i + 1;
+		} else if (ch === 60) {
+			// <
+			escaped += str.substring(start, i) + '&lt;';
+			start = i + 1;
+		}
 	}
 
-	return escaped + str.substring(last);
+	if (start === 0) {
+		return str;
+	}
+	return escaped + str.substring(start);
 }
 
-function finalizeHtml(html: string, context: RenderContext): string {
-	const hasHtmlRoot = html.trimStart().toLowerCase().startsWith('<html');
+/** escapes & and " for attribute values */
+function escapeAttr(value: unknown): string {
+	// oxlint-disable-next-line no-base-to-string -- intentional; callers ensure stringifiable values
+	const str = typeof value === 'string' ? value : String(value ?? '');
+	const len = str.length;
+	let start = 0;
+	let escaped = '';
+
+	for (let i = 0; i < len; i++) {
+		const ch = str.charCodeAt(i);
+		if (ch === 38) {
+			// &
+			escaped += str.substring(start, i) + '&amp;';
+			start = i + 1;
+		} else if (ch === 34) {
+			// "
+			escaped += str.substring(start, i) + '&quot;';
+			start = i + 1;
+		}
+	}
+
+	if (start === 0) {
+		return str;
+	}
+	return escaped + str.substring(start);
+}
+
+function finalizeHtml(html: string, ctx: RenderContext): string {
+	const hasHtmlRoot = ctx.hasHtmlRoot;
+
 	// inject hoisted head elements
-	if (context.headElements.length > 0) {
-		const headContent = context.headElements.join('');
+	if (ctx.headElements.length > 0) {
+		const headContent = ctx.headElements.join('');
 		if (hasHtmlRoot) {
 			const headCloseIndex = html.indexOf('</head>');
 			if (headCloseIndex !== -1) {
 				// inject before existing </head>
 				html = html.slice(0, headCloseIndex) + headContent + html.slice(headCloseIndex);
 			} else {
-				// no existing head, inject after <html>
-				const htmlOpenMatch = html.match(/<html[^>]*>/);
-				if (htmlOpenMatch && htmlOpenMatch.index !== undefined) {
-					const insertIndex = htmlOpenMatch.index + htmlOpenMatch[0].length;
-					html = html.slice(0, insertIndex) + `<head>${headContent}</head>` + html.slice(insertIndex);
+				// no existing head, inject after <html...>
+				const htmlTagStart = html.indexOf('<html');
+				if (htmlTagStart !== -1) {
+					const tagEnd = html.indexOf('>', htmlTagStart + 5);
+					if (tagEnd !== -1) {
+						const insertIndex = tagEnd + 1;
+						html = html.slice(0, insertIndex) + '<head>' + headContent + '</head>' + html.slice(insertIndex);
+					}
 				}
 			}
 		} else {
 			// no HTML root, prepend head
-			html = `<head>${headContent}</head>${html}`;
+			html = '<head>' + headContent + '</head>' + html;
 		}
 	}
 	if (hasHtmlRoot) {

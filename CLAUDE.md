@@ -1,4 +1,4 @@
-@oomfware/jsx is a server-side JSX renderer with streaming, Suspense, and context support.
+@oomfware/jsx is a server-side JSX renderer with context and head hoisting.
 
 the source code is organized under `src/`:
 

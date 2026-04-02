@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@atcute/uint8array':
-        specifier: ^1.1.1
-        version: 1.1.1
       csstype:
         specifier: ^3.2.3
         version: 3.2.3
@@ -38,9 +35,6 @@ importers:
         version: 6.0.2
 
 packages:
-
-  '@atcute/uint8array@1.1.1':
-    resolution: {integrity: sha512-3LsC8XB8TKe9q/5hOA5sFuzGaIFdJZJNewC5OKa3o/eU6+K7JR6see9Zy2JbQERNVnRl11EzbNov1efgLMAs4g==}
 
   '@babel/generator@8.0.0-rc.3':
     resolution: {integrity: sha512-em37/13/nR320G4jab/nIIHZgc2Wz2y/D39lxnTyxB4/D/omPQncl/lSdlnJY1OhQcRGugTSIF2l/69o31C9dA==}
@@ -707,8 +701,6 @@ packages:
     hasBin: true
 
 snapshots:
-
-  '@atcute/uint8array@1.1.1': {}
 
   '@babel/generator@8.0.0-rc.3':
     dependencies:

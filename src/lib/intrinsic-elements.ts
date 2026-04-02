@@ -149,6 +149,9 @@ interface DOMAttributes {
 export interface CSSProperties extends CSS.PropertiesHyphen<string | number> {
 	/**
 	 * CSS custom properties (CSS variables)
+	 *
+	 * object style keys are emitted as written, so standard properties should use
+	 * kebab-case names such as `background-color`
 	 * @see https://developer.mozilla.org/en-US/docs/Web/CSS/--*
 	 */
 	[key: `--${string}`]: string | number | undefined;
