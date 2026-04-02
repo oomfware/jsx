@@ -57,6 +57,7 @@ export function use<T>(usable: Context<T> | Promise<T>): T {
 	const cached = promiseCache.get(usable);
 	if (cached) {
 		if (cached.resolved) {
+			// oxlint-disable-next-line no-unsafe-type-assertion
 			return cached.value as T;
 		} else {
 			throw cached.error;

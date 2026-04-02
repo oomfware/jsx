@@ -119,6 +119,7 @@ export async function renderToString(node: JSXNode, options?: RenderOptions): Pr
 
 	let html = '';
 	while (true) {
+		// oxlint-disable-next-line no-await-in-loop -- sequential stream consumption
 		const { done, value } = await reader.read();
 		if (done) {
 			break;
@@ -188,6 +189,7 @@ function buildSegmentInner(node: JSXNode, context: RenderContext, path: string):
 		const { type, props } = node;
 		// Fragment
 		if (type === Fragment) {
+			// oxlint-disable-next-line no-unsafe-type-assertion
 			const children = (props as { children?: JSXNode }).children;
 			return children != null ? buildSegmentInner(children, context, path) : EMPTY_SEGMENT;
 		}
@@ -196,28 +198,34 @@ function buildSegmentInner(node: JSXNode, context: RenderContext, path: string):
 			const tag = type;
 
 			if (tag === 'head') {
+				// oxlint-disable-next-line no-unsafe-type-assertion
 				return buildHeadElementSegment(tag, props as Record<string, unknown>, context, path);
 			}
 
 			if (!context.insideHead && isHeadElement(tag)) {
 				// hoist to <head>
+				// oxlint-disable-next-line no-unsafe-type-assertion
 				const elementSeg = buildElementSegment(tag, props as Record<string, unknown>, context, path);
 				context.headElements.push(serializeSegment(elementSeg));
 				return EMPTY_SEGMENT;
 			}
 
+			// oxlint-disable-next-line no-unsafe-type-assertion
 			return buildElementSegment(tag, props as Record<string, unknown>, context, path);
 		}
 		// function components
 		if (typeof type === 'function') {
 			// Suspense boundary
 			if (type === Suspense) {
-				return buildSuspenseSegment(props as unknown as SuspenseProps, context, path);
+				// oxlint-disable-next-line no-unsafe-type-assertion
+				return buildSuspenseSegment(props as SuspenseProps, context, path);
 			}
 			// ErrorBoundary
 			if (type === ErrorBoundary) {
-				return buildErrorBoundarySegment(props as unknown as ErrorBoundaryProps, context, path);
+				// oxlint-disable-next-line no-unsafe-type-assertion
+				return buildErrorBoundarySegment(props as ErrorBoundaryProps, context, path);
 			}
+			// oxlint-disable-next-line no-unsafe-type-assertion
 			return buildComponentSegment(type, props as Record<string, unknown>, context, path);
 		}
 	}
@@ -241,6 +249,7 @@ function buildElementSegment(
 		return staticSeg(`<${tag}${attrs}>`);
 	}
 	// dangerouslySetInnerHTML
+	// oxlint-disable-next-line no-unsafe-type-assertion
 	const innerHTML = props.dangerouslySetInnerHTML as { __html: string } | undefined;
 	if (innerHTML) {
 		return staticSeg(`<${tag}${attrs}>${innerHTML.__html}</${tag}>`);
@@ -250,6 +259,7 @@ function buildElementSegment(
 	const previousInsideSvg = context.insideSvg;
 	context.insideSvg = tag === 'foreignObject' ? false : currentIsSvg;
 	const children =
+		// oxlint-disable-next-line no-unsafe-type-assertion
 		props.children != null ? buildSegment(props.children as JSXNode, context, path) : EMPTY_SEGMENT;
 	context.insideSvg = previousInsideSvg;
 	const close = staticSeg(`</${tag}>`);
@@ -267,6 +277,7 @@ function buildHeadElementSegment(
 	context.insideHead = true;
 	const open = staticSeg(`<${tag}${attrs}>`);
 	const children =
+		// oxlint-disable-next-line no-unsafe-type-assertion
 		props.children != null ? buildSegment(props.children as JSXNode, context, path) : EMPTY_SEGMENT;
 	context.insideHead = previousInsideHead;
 	const close = staticSeg(`</${tag}>`);
@@ -311,9 +322,11 @@ function renderAttributes(props: Record<string, unknown>): string {
 			let str = '';
 			let val;
 
-			for (const key in value) {
-				if ((val = (value as any)[key]) != null) {
-					str = str ? str + '; ' + key + ':' + val : key + ':' + val;
+			for (const prop in value) {
+				// oxlint-disable-next-line no-unsafe-type-assertion
+				if ((val = (value as Record<string, unknown>)[prop]) != null) {
+					// oxlint-disable-next-line no-base-to-string -- CSS values are strings/numbers
+					str = str ? str + '; ' + prop + ':' + val : prop + ':' + val;
 				}
 			}
 
@@ -391,6 +404,7 @@ function buildSuspenseSegment(props: SuspenseProps, ctx: RenderContext, path: st
 			// re-render function that handles subsequent promise throws
 			const rerender = (attempt: number): Promise<void> | void => {
 				if (attempt >= MAX_SUSPENSE_ATTEMPTS) {
+					// oxlint-disable-next-line preserve-caught-error -- not re-throwing; new error for max retries
 					throw new Error(`suspense boundary exceeded maximum retry attempts (${MAX_SUSPENSE_ATTEMPTS})`);
 				}
 				try {
@@ -473,6 +487,7 @@ async function resolveBlocking(segment: Segment): Promise<void> {
 	}
 	if (segment.kind === 'composite') {
 		for (const part of segment.parts) {
+			// oxlint-disable-next-line no-await-in-loop -- parts must resolve sequentially
 			await resolveBlocking(part);
 		}
 	}
@@ -515,6 +530,7 @@ async function streamPendingSuspense(
 		}
 		context.pendingSuspense = [];
 
+		// oxlint-disable-next-line no-await-in-loop -- batches must resolve sequentially
 		await Promise.all(
 			batch.map(async ({ id, promise }) => {
 				let resolvedSegment: Segment;
@@ -552,6 +568,7 @@ const ATTR_REGEX = /[&"]/g;
 const CONTENT_REGEX = /[&<]/g;
 
 function escapeHtml(value: unknown, isAttr: boolean): string {
+	// oxlint-disable-next-line no-base-to-string -- intentional; callers ensure stringifiable values
 	const str = String(value ?? '');
 	const pattern = isAttr ? ATTR_REGEX : CONTENT_REGEX;
 	pattern.lastIndex = 0;

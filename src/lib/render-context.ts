@@ -71,6 +71,7 @@ export function provide<T>(context: Context<T>, value: T): void {
 		const prev = ctx.contextStack[ctx.contextStack.length - 1];
 		ctx.currentFrame = prev ? new Map(prev) : new Map();
 	}
+	// oxlint-disable-next-line no-unsafe-type-assertion
 	ctx.currentFrame.set(context as Context<unknown>, value);
 }
 
@@ -82,7 +83,9 @@ export function inject<T>(context: Context<T>): T {
 	const ctx = activeRenderContext!;
 	// check current frame first, then stack
 	const frame = ctx.currentFrame ?? ctx.contextStack[ctx.contextStack.length - 1];
+	// oxlint-disable-next-line no-unsafe-type-assertion
 	if (frame?.has(context as Context<unknown>)) {
+		// oxlint-disable-next-line no-unsafe-type-assertion
 		return frame.get(context as Context<unknown>) as T;
 	}
 	return context.defaultValue;

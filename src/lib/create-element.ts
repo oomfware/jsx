@@ -106,6 +106,7 @@ export function cloneElement(
 	props?: Record<string, unknown> | null,
 	...children: JSXNode[]
 ): JSXElement {
+	// oxlint-disable-next-line no-unsafe-type-assertion
 	const finalProps: Record<string, unknown> = { ...(element.props as Record<string, unknown>), ...props };
 
 	if (children.length === 1) {
