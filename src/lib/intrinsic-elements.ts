@@ -1,4 +1,4 @@
-// based on @types/react@19.2.7
+// based on @types/react@19.2.14
 
 import type * as CSS from 'csstype';
 
@@ -135,9 +135,13 @@ interface DOMAttributes {
 	onanimationend?: string | undefined;
 	onanimationiteration?: string | undefined;
 
+	// Command Events
+	oncommand?: string | undefined;
+
 	// Toggle Events
 	ontoggle?: string | undefined;
 	onbeforetoggle?: string | undefined;
+	onbeforematch?: string | undefined;
 
 	// Transition Events
 	ontransitioncancel?: string | undefined;
@@ -466,7 +470,7 @@ export interface HTMLAttributes extends AriaAttributes, DOMAttributes {
 	dir?: string | undefined;
 	draggable?: Booleanish | undefined;
 	enterkeyhint?: 'enter' | 'done' | 'go' | 'next' | 'previous' | 'search' | 'send' | undefined;
-	hidden?: boolean | undefined;
+	hidden?: boolean | 'until-found' | undefined;
 	id?: string | undefined;
 	lang?: string | undefined;
 	nonce?: string | undefined;
@@ -509,6 +513,11 @@ export interface HTMLAttributes extends AriaAttributes, DOMAttributes {
 	results?: number | undefined;
 	security?: string | undefined;
 	unselectable?: 'on' | 'off' | undefined;
+
+	/**
+	 * @see https://developer.mozilla.org/en-US/docs/Web/HTML/Global_attributes/writingsuggestions
+	 */
+	writingsuggestions?: 'true' | 'false' | '' | undefined;
 
 	// Popover API
 	popover?: '' | 'auto' | 'manual' | 'hint' | undefined;
@@ -591,6 +600,7 @@ interface ButtonHTMLAttributes extends HTMLAttributes {
 	command?:
 		| 'show-modal'
 		| 'close'
+		| 'request-close'
 		| 'show-popover'
 		| 'hide-popover'
 		| 'toggle-popover'
@@ -700,6 +710,7 @@ interface ImgHTMLAttributes extends HTMLAttributes {
 	alt?: string | undefined;
 	crossorigin?: CrossOrigin;
 	decoding?: 'async' | 'auto' | 'sync' | undefined;
+	ismap?: boolean | undefined;
 	fetchpriority?: 'high' | 'low' | 'auto';
 	height?: number | string | undefined;
 	loading?: 'eager' | 'lazy' | undefined;
@@ -809,6 +820,7 @@ interface InputHTMLAttributes extends HTMLAttributes {
 	autocomplete?: HTMLInputAutoCompleteAttribute | undefined;
 	capture?: boolean | 'user' | 'environment' | undefined; // https://www.w3.org/TR/html-media-capture/#the-capture-attribute
 	checked?: boolean | undefined;
+	dirname?: string | undefined;
 	disabled?: boolean | undefined;
 	form?: string | undefined;
 	formaction?: string | undefined;
@@ -860,6 +872,7 @@ interface LiHTMLAttributes extends HTMLAttributes {
 interface LinkHTMLAttributes extends HTMLAttributes {
 	as?: string | undefined;
 	blocking?: 'render' | (string & {}) | undefined;
+	disabled?: boolean | undefined;
 	crossorigin?: CrossOrigin;
 	fetchpriority?: 'high' | 'low' | 'auto';
 	href?: string | undefined;
