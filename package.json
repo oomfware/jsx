@@ -1,6 +1,6 @@
 {
 	"name": "@oomfware/jsx",
-	"version": "0.1.8",
+	"version": "0.2.0",
 	"description": "server-side JSX renderer",
 	"license": "0BSD",
 	"repository": {
