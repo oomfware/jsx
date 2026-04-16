@@ -22,10 +22,9 @@ import { JSXElement, type Component, type JSXNode } from './types.ts';
 export function renderToString(node: JSXNode): string {
 	const ctx: RenderContext = {
 		depth: 0,
-		headElements: [],
+		headElements: '',
 		hasHtmlRoot: false,
 		insideHead: false,
-		insideSvg: false,
 		provideLog: [],
 		provideCount: 0,
 	};
@@ -34,7 +33,7 @@ export function renderToString(node: JSXNode): string {
 	try {
 		const html = renderNodeInner(node, ctx);
 		// skip finalization when nothing to inject
-		if (ctx.hasHtmlRoot || ctx.headElements.length > 0) {
+		if (ctx.hasHtmlRoot || ctx.headElements) {
 			return finalizeHtml(html, ctx);
 		}
 		return html;
@@ -53,7 +52,7 @@ export function renderToString(node: JSXNode): string {
 export function render(node: JSXNode, init?: ResponseInit): Response {
 	const html = renderToString(node);
 
-	// @ts-expect-error: not sure why.
+	// @ts-expect-error: HeadersInit mismatch between DOM and Bun type definitions
 	const headers = new Headers(init?.headers);
 	if (!headers.has('Content-Type')) {
 		headers.set('Content-Type', 'text/html; charset=utf-8');
@@ -151,7 +150,11 @@ const SELF_CLOSING_TAGS = new Set([
 
 function renderElement(tag: string, props: Record<string, unknown>, ctx: RenderContext): string {
 	if (tag === 'head') {
-		return renderHeadElement(tag, props, ctx);
+		const prev = ctx.insideHead;
+		ctx.insideHead = true;
+		const html = renderElementHtml(tag, props, ctx);
+		ctx.insideHead = prev;
+		return html;
 	}
 
 	if (tag === 'html' && ctx.depth === 0) {
@@ -160,7 +163,7 @@ function renderElement(tag: string, props: Record<string, unknown>, ctx: RenderC
 
 	if (!ctx.insideHead && HEAD_ELEMENTS.has(tag)) {
 		// hoist to <head>
-		ctx.headElements.push(renderElementHtml(tag, props, ctx));
+		ctx.headElements += renderElementHtml(tag, props, ctx);
 		return '';
 	}
 
@@ -183,26 +186,11 @@ function renderElementHtml(tag: string, props: Record<string, unknown>, ctx: Ren
 	}
 
 	// normal element with children
-	const previousInsideSvg = ctx.insideSvg;
-	ctx.insideSvg = tag === 'foreignObject' ? false : ctx.insideSvg || tag === 'svg';
 	ctx.depth++;
 	// oxlint-disable-next-line no-unsafe-type-assertion
 	const children = props.children != null ? renderNodeInner(props.children as JSXNode, ctx) : '';
 	ctx.depth--;
-	ctx.insideSvg = previousInsideSvg;
 
-	return '<' + tag + attrs + '>' + children + '</' + tag + '>';
-}
-
-function renderHeadElement(tag: string, props: Record<string, unknown>, ctx: RenderContext): string {
-	const attrs = renderAttributes(props);
-	const previousInsideHead = ctx.insideHead;
-	ctx.insideHead = true;
-	ctx.depth++;
-	// oxlint-disable-next-line no-unsafe-type-assertion
-	const children = props.children != null ? renderNodeInner(props.children as JSXNode, ctx) : '';
-	ctx.depth--;
-	ctx.insideHead = previousInsideHead;
 	return '<' + tag + attrs + '>' + children + '</' + tag + '>';
 }
 
@@ -272,7 +260,11 @@ function renderAttributes(props: Record<string, unknown>): string {
 
 // #region Context rendering
 
-function renderContextNode(context: Context<unknown>, props: Record<string, unknown>, ctx: RenderContext): string {
+function renderContextNode(
+	context: Context<unknown>,
+	props: Record<string, unknown>,
+	ctx: RenderContext,
+): string {
 	const savedCount = ctx.provideCount;
 	provide(context, props.value);
 	try {
@@ -340,16 +332,13 @@ function escapeAttr(value: unknown): string {
 }
 
 function finalizeHtml(html: string, ctx: RenderContext): string {
-	const hasHtmlRoot = ctx.hasHtmlRoot;
-
 	// inject hoisted head elements
-	if (ctx.headElements.length > 0) {
-		const headContent = ctx.headElements.join('');
-		if (hasHtmlRoot) {
+	if (ctx.headElements) {
+		if (ctx.hasHtmlRoot) {
 			const headCloseIndex = html.indexOf('</head>');
 			if (headCloseIndex !== -1) {
 				// inject before existing </head>
-				html = html.slice(0, headCloseIndex) + headContent + html.slice(headCloseIndex);
+				html = html.slice(0, headCloseIndex) + ctx.headElements + html.slice(headCloseIndex);
 			} else {
 				// no existing head, inject after <html...>
 				const htmlTagStart = html.indexOf('<html');
@@ -357,16 +346,17 @@ function finalizeHtml(html: string, ctx: RenderContext): string {
 					const tagEnd = html.indexOf('>', htmlTagStart + 5);
 					if (tagEnd !== -1) {
 						const insertIndex = tagEnd + 1;
-						html = html.slice(0, insertIndex) + '<head>' + headContent + '</head>' + html.slice(insertIndex);
+						html =
+							html.slice(0, insertIndex) + '<head>' + ctx.headElements + '</head>' + html.slice(insertIndex);
 					}
 				}
 			}
 		} else {
 			// no HTML root, prepend head
-			html = '<head>' + headContent + '</head>' + html;
+			html = '<head>' + ctx.headElements + '</head>' + html;
 		}
 	}
-	if (hasHtmlRoot) {
+	if (ctx.hasHtmlRoot) {
 		html = '<!doctype html>' + html;
 	}
 	return html;

@@ -4,11 +4,10 @@ import { Context } from './context.ts';
 export interface RenderContext {
 	/** current element nesting depth */
 	depth: number;
-	headElements: string[];
+	headElements: string;
 	/** whether the root element is an <html> tag */
 	hasHtmlRoot: boolean;
 	insideHead: boolean;
-	insideSvg: boolean;
 	/** log of provided contexts for undo after component render */
 	provideLog: Context<unknown>[];
 	provideCount: number;
